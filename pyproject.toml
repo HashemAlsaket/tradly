@@ -1,0 +1,17 @@
+[project]
+name = "tradly"
+version = "0.1.0"
+description = "Long-only trading intelligence platform with deterministic calculations and audit gates"
+readme = "TRADING_SPEC_V1.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
