@@ -30,13 +30,17 @@ def evaluate_broker_state_freshness(
         raise ValueError("now must be timezone-aware")
 
     freshness_seconds = int((current - as_of_timestamp).total_seconds())
-    is_fresh = freshness_seconds <= sla_seconds
 
-    reason = (
-        "broker_state_fresh"
-        if is_fresh
-        else "broker_state_stale_blocking_recommendations"
-    )
+    if freshness_seconds < 0:
+        return FreshnessResult(
+            is_fresh=False,
+            freshness_seconds=freshness_seconds,
+            sla_seconds=sla_seconds,
+            reason="broker_state_timestamp_in_future",
+        )
+
+    is_fresh = freshness_seconds <= sla_seconds
+    reason = "broker_state_fresh" if is_fresh else "broker_state_stale_blocking_recommendations"
 
     return FreshnessResult(
         is_fresh=is_fresh,

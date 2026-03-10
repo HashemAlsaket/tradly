@@ -32,6 +32,15 @@ class FreshnessGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             evaluate_broker_state_freshness(as_of, now=now)
 
+    def test_freshness_gate_blocks_future_timestamps(self) -> None:
+        now = datetime(2026, 3, 6, 15, 0, tzinfo=timezone.utc)
+        as_of = now + timedelta(seconds=30)
+
+        result = evaluate_broker_state_freshness(as_of, now=now)
+
+        self.assertFalse(result.is_fresh)
+        self.assertEqual(result.reason, "broker_state_timestamp_in_future")
+
 
 if __name__ == "__main__":
     unittest.main()
