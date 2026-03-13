@@ -198,3 +198,40 @@ CREATE TABLE IF NOT EXISTS feature_values (
   FOREIGN KEY (run_id) REFERENCES run_manifests(run_id),
   FOREIGN KEY (symbol) REFERENCES instruments(symbol)
 );
+
+-- 13) News pull usage log (request budgeting)
+CREATE TABLE IF NOT EXISTS news_pull_usage (
+  usage_id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  bucket TEXT NOT NULL,
+  symbols_csv TEXT NOT NULL,
+  request_count INTEGER NOT NULL,
+  request_date_utc DATE NOT NULL,
+  response_status TEXT NOT NULL,         -- success, http_error, limit_reached
+  detail TEXT,
+  new_events_upserted INTEGER NOT NULL DEFAULT 0,
+  new_symbol_links_upserted INTEGER NOT NULL DEFAULT 0,
+  created_at_utc TIMESTAMP NOT NULL
+);
+
+-- 14) LLM news interpretations (interpretation only; no calculations)
+CREATE TABLE IF NOT EXISTS news_interpretations (
+  provider TEXT NOT NULL,
+  provider_news_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  bucket TEXT NOT NULL,                  -- macro, sector, symbol, asia, ignore
+  impact_scope TEXT NOT NULL,            -- macro, rates, energy, semis, usd, risk_sentiment, multiple
+  impact_direction TEXT NOT NULL,        -- risk_on, risk_off, bullish_semis, bearish_semis, mixed, unclear
+  impact_horizon TEXT NOT NULL,          -- intraday, 1to3d, 1to2w
+  relevance_symbols_json TEXT NOT NULL,  -- JSON list
+  thesis_tags_json TEXT NOT NULL,        -- JSON list
+  market_impact_note TEXT NOT NULL,
+  confidence_label TEXT NOT NULL,        -- low, medium, high
+  based_on_provided_evidence BOOLEAN NOT NULL,
+  calculation_performed BOOLEAN NOT NULL,
+  interpreted_at_utc TIMESTAMP NOT NULL,
+  ingested_at_utc TIMESTAMP NOT NULL,
+  PRIMARY KEY (provider, provider_news_id, model, prompt_version),
+  FOREIGN KEY (provider, provider_news_id) REFERENCES news_events(provider, provider_news_id)
+);

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-import sys
+from tradly.paths import get_repo_root
 
 
 def main() -> int:
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = get_repo_root()
     schema_path = repo_root / "db" / "schema_v1.sql"
     db_path = repo_root / "data" / "tradly.duckdb"
 

@@ -1,0 +1,54 @@
+{
+  "as_of_utc": "2026-03-11T00:00:00+00:00",
+  "focus_symbols": ["MU", "SNDK", "NVDA", "NVTS"],
+  "events": [
+    {
+      "symbol": "MU",
+      "company": "Micron Technology",
+      "report_date_et": "2026-03-18",
+      "call_time_et": "16:30",
+      "eps_consensus_low": 8.5,
+      "eps_consensus_high": 8.69,
+      "eps_guidance_low": 8.22,
+      "eps_guidance_high": 8.62,
+      "notes": "Q2 FY2026 earnings. Watch memory pricing, data-center demand, and guidance delta vs consensus.",
+      "source_note": "Market Chameleon details provided by user; re-verify before event."
+    },
+    {
+      "symbol": "SNDK",
+      "company": "SanDisk",
+      "report_date_et": null,
+      "call_time_et": null,
+      "eps_consensus_low": null,
+      "eps_consensus_high": null,
+      "eps_guidance_low": null,
+      "eps_guidance_high": null,
+      "notes": "Pending schedule/details.",
+      "source_note": "Fill after schedule confirmation."
+    },
+    {
+      "symbol": "NVDA",
+      "company": "NVIDIA",
+      "report_date_et": null,
+      "call_time_et": null,
+      "eps_consensus_low": null,
+      "eps_consensus_high": null,
+      "eps_guidance_low": null,
+      "eps_guidance_high": null,
+      "notes": "Pending schedule/details.",
+      "source_note": "Fill after schedule confirmation."
+    },
+    {
+      "symbol": "NVTS",
+      "company": "Navitas Semiconductor",
+      "report_date_et": null,
+      "call_time_et": null,
+      "eps_consensus_low": null,
+      "eps_consensus_high": null,
+      "eps_guidance_low": null,
+      "eps_guidance_high": null,
+      "notes": "Pending schedule/details.",
+      "source_note": "Fill after schedule confirmation."
+    }
+  ]
+}
