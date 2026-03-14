@@ -1,0 +1,23 @@
+{
+  "lookback_days": 90,
+  "limit_per_request": 3,
+  "pulls_per_bucket_per_run": 1,
+  "daily_request_budget": 2500,
+  "bucket_daily_caps": {
+    "core_semis": 1200,
+    "us_macro": 500,
+    "asia_semis": 300,
+    "asia_macro": 200,
+    "sector_context": 200,
+    "event_reserve": 100
+  },
+  "max_pages_per_bucket": 300,
+  "buckets": {
+    "core_semis": ["MU", "SNDK", "NVDA", "NVTS", "AMD", "AVGO", "INTC", "TSM", "ASML", "AMAT", "LRCX", "KLAC"],
+    "us_macro": ["SPY", "QQQ", "TLT", "IEF", "SHY", "VIXY", "USO", "GLD", "UUP"],
+    "sector_context": ["SOXX", "SMH", "XSD", "XLK"],
+    "asia_semis": ["TSM", "ASML", "ARM", "AMAT", "LRCX", "KLAC", "ADI"],
+    "asia_macro": ["EWJ", "EWT", "FXI", "KWEB", "UUP"],
+    "event_reserve": ["MU", "NVDA", "TSM", "ASML"]
+  }
+}

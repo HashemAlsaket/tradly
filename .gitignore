@@ -20,6 +20,15 @@ env/
 build/
 dist/
 *.egg-info/
+*.duckdb
+*.duckdb.wal
+
+# Data outputs
+data/raw/
+data/clean/
+data/features/
+data/runs/
+data/journal/
 
 # Coverage
 .coverage
