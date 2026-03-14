@@ -13,6 +13,8 @@ from tradly.paths import get_repo_root
 ALLOWED_ACTIONS = {"Strong Buy", "Buy", "Watch", "Trim", "Exit", "Abstain"}
 ALLOWED_CONFIDENCE = {"low", "medium", "high"}
 BUY_ACTIONS = {"Strong Buy", "Buy"}
+MIN_CONFIDENCE_SCORE = 0
+MAX_CONFIDENCE_SCORE = 100
 
 
 def _load_dotenv(path: Path) -> None:
@@ -52,12 +54,16 @@ def _call_openai_chat(model: str, api_key: str, prompt_payload: dict) -> dict:
         "Review the symbol evidence and provide final action calls.\n"
         "Allowed llm_action values: Strong Buy, Buy, Watch, Trim, Exit, Abstain.\n"
         "Allowed confidence_label values: low, medium, high.\n"
+        "You MUST also provide confidence_score as an integer from 0 to 100.\n"
+        "confidence_score is your judgment score based only on the provided evidence.\n"
+        "It is NOT a calculated probability and must not be described as one.\n"
         "Output JSON format:\n"
         "{\n"
         '  "decisions": [\n'
         "    {\n"
         '      "symbol": "MU",\n'
         '      "llm_action": "Buy",\n'
+        '      "confidence_score": 74,\n'
         '      "confidence_label": "medium",\n'
         '      "rationale": "short text",\n'
         '      "based_on_provided_evidence": true,\n'
@@ -137,6 +143,13 @@ def _validate_decisions(actions_payload: dict, llm_payload: dict) -> dict[str, d
         llm_action = str(row.get("llm_action", "")).strip()
         if llm_action not in ALLOWED_ACTIONS:
             raise RuntimeError(f"llm_action invalid for {symbol}: {llm_action}")
+        confidence_score = row.get("confidence_score")
+        if isinstance(confidence_score, bool) or not isinstance(confidence_score, int):
+            raise RuntimeError(f"confidence_score invalid type for {symbol}: {confidence_score}")
+        if confidence_score < MIN_CONFIDENCE_SCORE or confidence_score > MAX_CONFIDENCE_SCORE:
+            raise RuntimeError(
+                f"confidence_score out of range for {symbol}: {confidence_score}"
+            )
         confidence = str(row.get("confidence_label", "")).strip().lower()
         if confidence not in ALLOWED_CONFIDENCE:
             raise RuntimeError(f"confidence_label invalid for {symbol}: {confidence}")
@@ -163,6 +176,7 @@ def _validate_decisions(actions_payload: dict, llm_payload: dict) -> dict[str, d
 
         out[symbol] = {
             "llm_action": llm_action,
+            "confidence_score": confidence_score,
             "confidence_label": confidence,
             "rationale": rationale,
             "based_on_provided_evidence": True,
@@ -249,6 +263,7 @@ def main() -> int:
         review = decisions_by_symbol[symbol]
         merged = dict(row)
         merged["llm_action"] = review["llm_action"]
+        merged["llm_decision_confidence_score"] = review["confidence_score"]
         merged["llm_confidence_label"] = review["confidence_label"]
         merged["llm_rationale"] = review["rationale"]
         merged["llm_based_on_provided_evidence"] = True
