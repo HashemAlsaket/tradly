@@ -9,6 +9,7 @@ from pathlib import Path
 from tradly.config.model_suite import load_openai_model_suite
 from tradly.paths import get_repo_root
 from tradly.services.db_time import to_db_utc
+from tradly.services.market_calendar import MARKET_TZ, build_trading_calendar_row, market_session_state
 from tradly.services.time_context import get_time_context
 
 
@@ -116,6 +117,10 @@ def _call_openai(model: str, api_key: str, batch_articles: list[dict]) -> dict:
         "5. Use `bullish` or `bearish` for direct directional pressure on a sector or symbol.\n"
         "6. Use `risk_on` or `risk_off` for broader market tone or cross-asset posture.\n"
         "7. Use `2to6w` when the article's impact is more durable than a normal swing horizon.\n"
+        "8. Treat `market_session_state`, `day_name`, `is_weekend`, `is_market_holiday`, and `last_cash_session_date` as important context.\n"
+        "   Weekend or holiday timing does not mean the data is stale; it means the cash market is closed.\n"
+        "9. On weekends or market holidays, avoid overusing very short-horizon calls unless the article is clearly about the next trading session.\n"
+        "   Medium and position horizons may still be appropriate when the thesis is durable.\n"
         'Return as: {"interpretations":[...]}.\n'
         f"Articles:\n{json.dumps(batch_articles, ensure_ascii=True)}"
     )
@@ -355,11 +360,18 @@ def main() -> int:
 
             pending = []
             for row in rows:
+                published_at_utc = row[2]
+                market_day = published_at_utc.astimezone(MARKET_TZ).date() if published_at_utc.tzinfo else published_at_utc.date()
+                calendar_row = build_trading_calendar_row(market_day)
+                current_calendar_row = build_trading_calendar_row(time_ctx.now_utc.astimezone(MARKET_TZ).date())
                 pending.append(
                     {
                         "provider": row[0],
                         "provider_news_id": row[1],
-                        "published_at_utc": str(row[2]),
+                        "published_at_utc": str(published_at_utc),
+                        "published_day_name": calendar_row.day_name,
+                        "published_market_calendar_state": calendar_row.market_calendar_state,
+                        "published_last_cash_session_date": calendar_row.last_cash_session_date.isoformat(),
                         "source_name": row[3],
                         "headline": row[4],
                         "summary": row[5],
@@ -368,6 +380,10 @@ def main() -> int:
                         "sentiment_score": row[8],
                         "source_quality": row[9],
                         "symbols": row[10] if isinstance(row[10], list) else [],
+                        "market_session_state_now": market_session_state(time_ctx.now_utc),
+                        "current_day_name": current_calendar_row.day_name,
+                        "current_market_calendar_state": current_calendar_row.market_calendar_state,
+                        "current_last_cash_session_date": current_calendar_row.last_cash_session_date.isoformat(),
                     }
                 )
 

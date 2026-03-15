@@ -14,6 +14,13 @@ from tradly.models.calibration import (
     normalize_score,
 )
 from tradly.services.db_time import from_db_utc
+from tradly.services.market_calendar import (
+    MARKET_TZ,
+    build_trading_calendar_row,
+    horizon_execution_ready,
+    market_closed_reason_code,
+    market_session_state,
+)
 
 
 MIN_BARS_NEAR = 20
@@ -71,14 +78,21 @@ def _lane_output(
     bars: list[DailyBar],
     latest_status: str,
     latest_market_date_ok: bool,
+    now_utc: datetime,
 ) -> dict[str, object]:
     config = LANE_CONFIG[lane_id]
     horizon = str(config["horizon"])
     days_forward = int(config["days_forward"])
     min_bars = int(config["min_bars"])
     canonical_horizon = horizon
+    lane_execution_ready = horizon_execution_ready(horizon=horizon, now_utc=now_utc)
+    current_market_session = market_session_state(now_utc)
+    calendar_reason = market_closed_reason_code(now_utc=now_utc)
 
     if len(bars) < min_bars:
+        why_code = ["range_history_missing"]
+        if not lane_execution_ready and calendar_reason is not None:
+            why_code.append(calendar_reason)
         return {
             "lane_id": lane_id,
             "canonical_horizon": canonical_horizon,
@@ -87,8 +101,10 @@ def _lane_output(
             "coverage_state": "insufficient_evidence",
             "freshness_score": 25,
             "coverage_score": 25,
-            "why_code": ["range_history_missing"],
+            "why_code": why_code,
             "lane_data_freshness_ok": False,
+            "lane_execution_ready": lane_execution_ready,
+            "market_session_state": current_market_session,
             "bar_count": len(bars),
             "expected_move_pct": None,
             "expected_move_abs": None,
@@ -187,6 +203,8 @@ def _lane_output(
     for code in latency_assessment.why_code:
         if code not in why_code:
             why_code.append(code)
+    if not lane_execution_ready and calendar_reason is not None:
+        why_code.append(calendar_reason)
 
     expected_move_abs = close_now * expected_move_pct
     upper_bound = close_now + expected_move_abs
@@ -202,6 +220,8 @@ def _lane_output(
         "coverage_score": coverage_score,
         "why_code": why_code,
         "lane_data_freshness_ok": freshness_score >= 70,
+        "lane_execution_ready": lane_execution_ready,
+        "market_session_state": current_market_session,
         "bar_count": len(bars),
         "expected_move_pct": round(expected_move_pct * 100.0, 4),
         "expected_move_abs": round(expected_move_abs, 4),
@@ -230,6 +250,8 @@ def build_range_expectation_rows(
     expected_min_market_date,
 ) -> list[dict]:
     rows: list[dict] = []
+    calendar_row = build_trading_calendar_row(now_utc.astimezone(MARKET_TZ).date())
+    current_market_session = market_session_state(now_utc)
 
     for symbol in model_symbols:
         metadata = symbol_metadata.get(symbol, {})
@@ -246,6 +268,10 @@ def build_range_expectation_rows(
                 "swing_term": MIN_BARS_SWING,
                 "position_term": MIN_BARS_POSITION,
             },
+            "market_calendar_state": calendar_row.market_calendar_state,
+            "day_name": calendar_row.day_name,
+            "last_cash_session_date": calendar_row.last_cash_session_date.isoformat(),
+            "market_session_state": current_market_session,
         }
 
         if not bars:
@@ -271,6 +297,7 @@ def build_range_expectation_rows(
                     "evidence": evidence,
                     "as_of_utc": now_utc.isoformat(),
                     "data_freshness_ok": False,
+                    "execution_ready": False,
                 }
             )
             continue
@@ -286,6 +313,7 @@ def build_range_expectation_rows(
                 bars=bars,
                 latest_status=latest_status,
                 latest_market_date_ok=latest_market_date_ok,
+                now_utc=now_utc,
             )
             for lane_id in ("near_term", "swing_term", "position_term")
         }
@@ -327,6 +355,7 @@ def build_range_expectation_rows(
                 "evidence": evidence,
                 "as_of_utc": now_utc.isoformat(),
                 "data_freshness_ok": bool(primary_lane["lane_data_freshness_ok"]),
+                "execution_ready": bool(primary_lane["lane_execution_ready"]),
             }
         )
 

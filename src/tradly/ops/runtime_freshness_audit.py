@@ -8,7 +8,11 @@ from zoneinfo import ZoneInfo
 
 from tradly.paths import get_repo_root
 from tradly.services.db_time import from_db_utc
-from tradly.services.market_calendar import previous_trading_day
+from tradly.services.market_calendar import (
+    build_trading_calendar_row,
+    market_session_state,
+    previous_trading_day,
+)
 from tradly.services.time_context import get_time_context
 
 
@@ -22,6 +26,14 @@ class FreshnessCheck:
     name: str
     status: str
     detail: str
+
+
+def _freshness_mode(*, market_session: str) -> str:
+    if market_session in {"weekend", "holiday"}:
+        return "closed_calendar"
+    if market_session == "market_hours":
+        return "market_hours"
+    return "offhours"
 
 
 def _load_dotenv(path) -> None:
@@ -73,13 +85,19 @@ def main() -> int:
     now_utc = time_ctx.now_utc
     now_local = time_ctx.now_local
     market_hours = _is_market_hours(now_local)
+    market_session = market_session_state(now_utc)
+    freshness_mode = _freshness_mode(market_session=market_session)
+    calendar_row = build_trading_calendar_row(now_utc.astimezone(MARKET_TZ).date())
 
     news_max_age_min_market = int(os.getenv("TRADLY_NEWS_MAX_AGE_MINUTES_MARKET", "45"))
     news_max_age_min_offhours = int(os.getenv("TRADLY_NEWS_MAX_AGE_MINUTES_OFFHOURS", "240"))
+    news_max_age_min_closed_calendar = int(os.getenv("TRADLY_NEWS_MAX_AGE_MINUTES_CLOSED_CALENDAR", "1080"))
     news_min_success_pulls_market = int(os.getenv("TRADLY_NEWS_MIN_SUCCESS_PULLS_MARKET", "1"))
     news_min_success_pulls_offhours = int(os.getenv("TRADLY_NEWS_MIN_SUCCESS_PULLS_OFFHOURS", "1"))
+    news_min_success_pulls_closed_calendar = int(os.getenv("TRADLY_NEWS_MIN_SUCCESS_PULLS_CLOSED_CALENDAR", "1"))
     interp_max_age_min_market = int(os.getenv("TRADLY_INTERP_MAX_AGE_MINUTES_MARKET", "60"))
     interp_max_age_min_offhours = int(os.getenv("TRADLY_INTERP_MAX_AGE_MINUTES_OFFHOURS", "240"))
+    interp_max_age_min_closed_calendar = int(os.getenv("TRADLY_INTERP_MAX_AGE_MINUTES_CLOSED_CALENDAR", "1080"))
 
     conn = duckdb.connect(str(db_path), read_only=True)
     try:
@@ -141,10 +159,14 @@ def main() -> int:
 
     if latest_daily_bar_utc is None:
         checks.append(FreshnessCheck("market_daily_bar_present", "FAIL", "no 1d bars found"))
+        market_bar_status = "missing"
+        expected_min_market_date = previous_trading_day(now_utc.astimezone(MARKET_TZ).date())
+        latest_daily_bar_market_date = None
     else:
         latest_daily_bar_market_date = _market_date_from_db_ts(latest_daily_bar_utc)
         expected_min_market_date = previous_trading_day(now_utc.astimezone(MARKET_TZ).date())
         if latest_daily_bar_market_date < expected_min_market_date:
+            market_bar_status = "stale_for_calendar"
             checks.append(
                 FreshnessCheck(
                     "market_daily_bar_recency",
@@ -156,6 +178,7 @@ def main() -> int:
                 )
             )
         else:
+            market_bar_status = "current_for_calendar"
             checks.append(
                 FreshnessCheck(
                     "market_daily_bar_recency",
@@ -175,8 +198,15 @@ def main() -> int:
         if age_sec is None:
             checks.append(FreshnessCheck("news_pull_recency", "FAIL", "timestamp_parse_failed"))
             age_sec = 10**9
-        max_age_sec = (news_max_age_min_market if market_hours else news_max_age_min_offhours) * 60
-        min_success = news_min_success_pulls_market if market_hours else news_min_success_pulls_offhours
+        if freshness_mode == "market_hours":
+            max_age_sec = news_max_age_min_market * 60
+            min_success = news_min_success_pulls_market
+        elif freshness_mode == "closed_calendar":
+            max_age_sec = news_max_age_min_closed_calendar * 60
+            min_success = news_min_success_pulls_closed_calendar
+        else:
+            max_age_sec = news_max_age_min_offhours * 60
+            min_success = news_min_success_pulls_offhours
         min_success_rate = float(os.getenv("TRADLY_NEWS_MIN_SUCCESS_RATE", "0.40"))
         success_rate = success_news_pulls_today / total_news_pulls_today if total_news_pulls_today else 0.0
         status = (
@@ -192,6 +222,7 @@ def main() -> int:
                 status,
                 (
                     f"age_sec={age_sec} max_age_sec={max_age_sec} market_hours={market_hours} "
+                    f"freshness_mode={freshness_mode} market_session={market_session} "
                     f"success_pulls_today={success_news_pulls_today} total_pulls_today={total_news_pulls_today} "
                     f"min_success={min_success} success_rate={success_rate:.3f} min_success_rate={min_success_rate:.3f}"
                 ),
@@ -207,7 +238,12 @@ def main() -> int:
         else:
             parsed_age = _age_seconds_from_db_ts(latest_interp_utc, now_utc)
             age_sec = 10**9 if parsed_age is None else parsed_age
-        max_age_sec = (interp_max_age_min_market if market_hours else interp_max_age_min_offhours) * 60
+        if freshness_mode == "market_hours":
+            max_age_sec = interp_max_age_min_market * 60
+        elif freshness_mode == "closed_calendar":
+            max_age_sec = interp_max_age_min_closed_calendar * 60
+        else:
+            max_age_sec = interp_max_age_min_offhours * 60
         status = "PASS"
         if pending_uninterpreted_24h > 0 and age_sec > max_age_sec:
             status = "FAIL"
@@ -217,6 +253,7 @@ def main() -> int:
                 status,
                 (
                     f"age_sec={age_sec} max_age_sec={max_age_sec} market_hours={market_hours} "
+                    f"freshness_mode={freshness_mode} market_session={market_session} "
                     f"pending_uninterpreted_24h={pending_uninterpreted_24h}"
                 ),
             )
@@ -228,14 +265,29 @@ def main() -> int:
         "as_of_utc": now_utc.isoformat(),
         "as_of_local": now_local.isoformat(),
         "market_hours": market_hours,
+        "market_session_state": market_session,
+        "freshness_mode": freshness_mode,
         "overall_status": "PASS" if not failed else "FAIL",
         "fail_count": len(failed),
         "metrics": {
             "latest_daily_bar_utc": from_db_utc(latest_daily_bar_utc).isoformat() if latest_daily_bar_utc else None,
+            "latest_daily_bar_market_date": latest_daily_bar_market_date.isoformat() if latest_daily_bar_market_date else None,
+            "expected_min_market_date": expected_min_market_date.isoformat(),
+            "market_bar_status": market_bar_status,
             "latest_news_pull_utc": from_db_utc(latest_news_pull_utc).isoformat() if latest_news_pull_utc else None,
             "latest_interp_utc": from_db_utc(latest_interp_utc).isoformat() if latest_interp_utc else None,
             "success_news_pulls_today": success_news_pulls_today,
             "total_news_pulls_today": total_news_pulls_today,
+            "market_calendar_state": calendar_row.market_calendar_state,
+            "day_of_week": calendar_row.day_of_week,
+            "day_name": calendar_row.day_name,
+            "is_market_holiday": calendar_row.is_market_holiday,
+            "is_weekend": calendar_row.is_weekend,
+            "is_trading_day": calendar_row.is_trading_day,
+            "last_cash_session_date": calendar_row.last_cash_session_date.isoformat(),
+            "next_cash_session_date": calendar_row.next_cash_session_date.isoformat(),
+            "short_horizon_execution_ready": market_session in {"pre_market", "market_hours", "after_hours"},
+            "medium_horizon_thesis_usable": True,
         },
         "checks": [asdict(c) for c in checks],
     }

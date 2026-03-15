@@ -13,6 +13,7 @@ STEPS = [
     ("ingest_market_bars", "tradly.pipeline.ingest_market_bars"),
     ("ingest_news_budgeted", "tradly.pipeline.ingest_news_budgeted"),
     ("interpret_news_llm", "tradly.pipeline.interpret_news_llm"),
+    ("refresh_market_calendar_context", "tradly.ops.refresh_market_calendar_context"),
     ("run_market_regime", "tradly.pipeline.run_market_regime"),
     ("run_sector_movement", "tradly.pipeline.run_sector_movement"),
     ("run_symbol_movement", "tradly.pipeline.run_symbol_movement"),

@@ -15,7 +15,13 @@ from tradly.models.calibration import (
 )
 from tradly.models.market_regime import Bar, clamp
 from tradly.services.db_time import from_db_utc
-from tradly.services.market_calendar import previous_trading_day
+from tradly.services.market_calendar import (
+    build_trading_calendar_row,
+    horizon_execution_ready,
+    market_closed_reason_code,
+    market_session_state,
+    previous_trading_day,
+)
 
 
 MARKET_TZ = ZoneInfo("America/New_York")
@@ -132,6 +138,8 @@ def build_symbol_movement_rows(
         else {}
     )
     expected_min_market_date = previous_trading_day(now_utc.astimezone(MARKET_TZ).date())
+    calendar_row = build_trading_calendar_row(now_utc.astimezone(MARKET_TZ).date())
+    current_market_session = market_session_state(now_utc)
 
     for symbol in model_symbols:
         metadata = symbol_metadata.get(symbol, {})
@@ -286,9 +294,13 @@ def build_symbol_movement_rows(
             recency_ok=latest_market_date_ok,
             horizon=provisional_horizon_primary,
         )
+        execution_ready = horizon_execution_ready(horizon=provisional_horizon_primary, now_utc=now_utc)
         for code in latency_assessment.why_code:
             if code not in why_code:
                 why_code.append(code)
+        calendar_reason = market_closed_reason_code(now_utc=now_utc)
+        if not execution_ready and calendar_reason is not None:
+            why_code.append(calendar_reason)
 
         market_lane_id = HORIZON_TO_MARKET_LANE[provisional_horizon_primary]
         market_lane = market_lane_diagnostics.get(market_lane_id, {}) if isinstance(market_lane_diagnostics, dict) else {}
@@ -419,6 +431,10 @@ def build_symbol_movement_rows(
                 "latest_bar_utc": from_db_utc(latest.ts_utc).isoformat(),
                 "latest_market_date": latest_market_date.isoformat(),
                 "expected_min_market_date": expected_min_market_date.isoformat(),
+                "market_calendar_state": calendar_row.market_calendar_state,
+                "day_name": calendar_row.day_name,
+                "last_cash_session_date": calendar_row.last_cash_session_date.isoformat(),
+                "market_session_state": current_market_session,
                 "latest_market_date_ok": latest_market_date_ok,
                 "data_status": latest_status,
                 "market_data_latency_minutes": latency_assessment.market_data_latency_minutes,
@@ -452,6 +468,7 @@ def build_symbol_movement_rows(
                 "freshness_score": freshness_score,
                 "stability_score": stability_score,
                 "coverage_score": coverage_score,
+                "execution_ready": execution_ready,
             }
         )
 
@@ -484,6 +501,8 @@ def build_symbol_movement_rows(
                         "market_overlay_lane_present": market_lane_present,
                         "market_overlay_lane_confidence": market_lane_confidence,
                         "market_overlay_lane_coverage_state": market_lane_coverage_state,
+                        "market_session_state": current_market_session,
+                        "execution_ready": execution_ready,
                         "sector_overlay_present": sector_overlay_present,
                         "sector_overlay_lane_id": sector_lane_id if sector_overlay_present else None,
                         "sector_overlay_lane_present": sector_lane_present,
@@ -555,6 +574,7 @@ def build_symbol_movement_rows(
                 "evidence": evidence,
                 "as_of_utc": now_utc.isoformat(),
                 "data_freshness_ok": latest_market_date_ok and symbol_valid,
+                "execution_ready": execution_ready,
             }
         )
 

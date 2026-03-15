@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from tradly.models.calibration import ConfidenceInputs, compute_confidence, confidence_label, normalize_score
+from tradly.services.market_calendar import horizon_execution_ready, market_closed_reason_code
 
 
 LANE_TO_HORIZON = {
@@ -41,9 +42,10 @@ class ComponentLane:
     why_code: tuple[str, ...]
     freshness_ok: bool
     freshness_score: int | None
+    execution_ready: bool
 
 
-def _lane_view(row: dict | None, lane_id: str, *, component_id: str, scope_id: str) -> ComponentLane:
+def _lane_view(row: dict | None, lane_id: str, *, component_id: str, scope_id: str, now_utc: datetime) -> ComponentLane:
     if not isinstance(row, dict):
         return ComponentLane(
             component_id=component_id,
@@ -58,6 +60,7 @@ def _lane_view(row: dict | None, lane_id: str, *, component_id: str, scope_id: s
             why_code=(),
             freshness_ok=False,
             freshness_score=None,
+            execution_ready=horizon_execution_ready(horizon=LANE_TO_HORIZON[lane_id], now_utc=now_utc),
         )
 
     lane_diagnostics = row.get("lane_diagnostics")
@@ -76,6 +79,7 @@ def _lane_view(row: dict | None, lane_id: str, *, component_id: str, scope_id: s
             why_code=tuple(str(code) for code in lane.get("why_code", []) if str(code).strip()),
             freshness_ok=bool(lane.get("lane_data_freshness_ok", row.get("data_freshness_ok", False))),
             freshness_score=int(lane.get("freshness_score", 0) or 0) if lane.get("freshness_score") is not None else None,
+            execution_ready=bool(lane.get("lane_execution_ready", row.get("execution_ready", horizon_execution_ready(horizon=LANE_TO_HORIZON[lane_id], now_utc=now_utc)))),
         )
 
     primary_lane_id = str(row.get("lane_primary") or HORIZON_TO_LANE.get(str(row.get("horizon_primary", "")), ""))
@@ -94,6 +98,7 @@ def _lane_view(row: dict | None, lane_id: str, *, component_id: str, scope_id: s
             why_code=tuple(str(code) for code in row.get("why_code", []) if str(code).strip()),
             freshness_ok=bool(row.get("data_freshness_ok", False)),
             freshness_score=int(evidence.get("freshness_score", 0) or 0) if evidence.get("freshness_score") is not None else None,
+            execution_ready=bool(row.get("execution_ready", horizon_execution_ready(horizon=LANE_TO_HORIZON[lane_id], now_utc=now_utc))),
         )
 
     return ComponentLane(
@@ -109,6 +114,7 @@ def _lane_view(row: dict | None, lane_id: str, *, component_id: str, scope_id: s
         why_code=(),
         freshness_ok=False,
         freshness_score=None,
+        execution_ready=horizon_execution_ready(horizon=LANE_TO_HORIZON[lane_id], now_utc=now_utc),
     )
 
 
@@ -154,6 +160,8 @@ def _range_haircut(lane_id: str, range_lane: ComponentLane | None, range_payload
 
 
 def _horizon_state_for_lane(lane_output: dict[str, object], *, lane_id: str) -> str:
+    if not bool(lane_output.get("execution_ready", True)):
+        return "research_only"
     coverage_state = str(lane_output.get("coverage_state", "insufficient_evidence"))
     if coverage_state == "insufficient_evidence":
         component_count = int(lane_output.get("component_count", 0) or 0)
@@ -192,6 +200,7 @@ def _build_horizon_summary(lane_outputs: dict[str, dict[str, object]]) -> dict[s
             "score_normalized": near_term["score_normalized"],
             "why_code": list(near_term["why_code"]),
             "data_freshness_ok": bool(near_term["lane_data_freshness_ok"]),
+            "execution_ready": bool(near_term["execution_ready"]),
         },
         "1to2w": {
             "state": _horizon_state_for_lane(swing_term, lane_id="swing_term"),
@@ -203,6 +212,7 @@ def _build_horizon_summary(lane_outputs: dict[str, dict[str, object]]) -> dict[s
             "score_normalized": swing_term["score_normalized"],
             "why_code": list(swing_term["why_code"]),
             "data_freshness_ok": bool(swing_term["lane_data_freshness_ok"]),
+            "execution_ready": bool(swing_term["execution_ready"]),
         },
         "2to6w": {
             "state": _horizon_state_for_lane(position_term, lane_id="position_term"),
@@ -214,6 +224,7 @@ def _build_horizon_summary(lane_outputs: dict[str, dict[str, object]]) -> dict[s
             "score_normalized": position_term["score_normalized"],
             "why_code": list(position_term["why_code"]),
             "data_freshness_ok": bool(position_term["lane_data_freshness_ok"]),
+            "execution_ready": bool(position_term["execution_ready"]),
         },
     }
 
@@ -239,12 +250,14 @@ def build_ensemble_rows(
 
         lane_outputs: dict[str, dict[str, object]] = {}
         for lane_id in ("near_term", "swing_term", "position_term"):
+            lane_execution_ready = horizon_execution_ready(horizon=LANE_TO_HORIZON[lane_id], now_utc=now_utc)
+            calendar_reason = market_closed_reason_code(now_utc=now_utc)
             components = [
-                _lane_view(market_row, lane_id, component_id="market_regime", scope_id="market"),
-                _lane_view(sector_rows_by_scope.get(sector), lane_id, component_id="sector_movement", scope_id=sector),
-                _lane_view(symbol_movement_rows_by_scope.get(symbol), lane_id, component_id="symbol_movement", scope_id=symbol),
-                _lane_view(symbol_news_rows_by_scope.get(symbol), lane_id, component_id="symbol_news", scope_id=symbol),
-                _lane_view(sector_news_rows_by_scope.get(sector), lane_id, component_id="sector_news", scope_id=sector),
+                _lane_view(market_row, lane_id, component_id="market_regime", scope_id="market", now_utc=now_utc),
+                _lane_view(sector_rows_by_scope.get(sector), lane_id, component_id="sector_movement", scope_id=sector, now_utc=now_utc),
+                _lane_view(symbol_movement_rows_by_scope.get(symbol), lane_id, component_id="symbol_movement", scope_id=symbol, now_utc=now_utc),
+                _lane_view(symbol_news_rows_by_scope.get(symbol), lane_id, component_id="symbol_news", scope_id=symbol, now_utc=now_utc),
+                _lane_view(sector_news_rows_by_scope.get(sector), lane_id, component_id="sector_news", scope_id=sector, now_utc=now_utc),
             ]
 
             symbol_movement_lane = next(c for c in components if c.component_id == "symbol_movement")
@@ -447,6 +460,8 @@ def build_ensemble_rows(
                 why_code.append("component_conflict_high")
             if range_haircut > 0:
                 why_code.append("range_expanding_conviction_reduced")
+            if not lane_execution_ready and calendar_reason is not None:
+                why_code.append(calendar_reason)
             if not why_code:
                 why_code.append("ensemble_signal_mixed")
 
@@ -462,6 +477,7 @@ def build_ensemble_rows(
                 "coverage_score": coverage_score,
                 "why_code": why_code,
                 "lane_data_freshness_ok": freshness_score >= 70,
+                "execution_ready": lane_execution_ready,
                 "score_raw": round(score_raw, 4),
                 "score_normalized": round(score_normalized, 4),
                 "component_count": len(contributing_components),
@@ -519,6 +535,7 @@ def build_ensemble_rows(
                 },
                 "as_of_utc": now_utc.isoformat(),
                 "data_freshness_ok": bool(primary_lane["lane_data_freshness_ok"]),
+                "execution_ready": bool(primary_lane["execution_ready"]),
             }
         )
 

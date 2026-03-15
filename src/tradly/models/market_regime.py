@@ -15,7 +15,13 @@ from tradly.models.calibration import (
     normalize_score,
 )
 from tradly.services.db_time import from_db_utc
-from tradly.services.market_calendar import previous_trading_day
+from tradly.services.market_calendar import (
+    build_trading_calendar_row,
+    horizon_execution_ready,
+    market_closed_reason_code,
+    market_session_state,
+    previous_trading_day,
+)
 
 
 MARKET_TZ = ZoneInfo("America/New_York")
@@ -141,6 +147,8 @@ def build_market_regime_row(
     latest_market_date = _market_date_from_db_ts(global_latest_utc)
     expected_min_market_date = previous_trading_day(now_utc.astimezone(MARKET_TZ).date())
     latest_market_date_ok = latest_market_date >= expected_min_market_date
+    calendar_row = build_trading_calendar_row(now_utc.astimezone(MARKET_TZ).date())
+    current_market_session = market_session_state(now_utc)
     market_data_statuses = sorted(set(latest_status_by_symbol.values()))
     market_data_status = "DELAYED" if "DELAYED" in market_data_statuses else "REALTIME"
     macro_data_missing = latest_macro_ts_utc is None
@@ -239,6 +247,7 @@ def build_market_regime_row(
 
     def _build_lane(lane_id: str) -> dict[str, object]:
         horizon = LANE_TO_HORIZON[lane_id]
+        lane_execution_ready = horizon_execution_ready(horizon=horizon, now_utc=now_utc)
         assessment = assess_latency(
             data_status=market_data_status,
             recency_ok=latest_market_date_ok,
@@ -301,6 +310,9 @@ def build_market_regime_row(
 
         if coverage_state != "sufficient_evidence":
             lane_why_code.append("market_data_stale")
+        calendar_reason = market_closed_reason_code(now_utc=now_utc)
+        if not lane_execution_ready and calendar_reason is not None:
+            lane_why_code.append(calendar_reason)
         for code in assessment.why_code:
             if code not in lane_why_code:
                 lane_why_code.append(code)
@@ -335,6 +347,8 @@ def build_market_regime_row(
             "coverage_score": coverage_score,
             "latency_assessment": assessment.to_dict(),
             "why_code": lane_why_code,
+            "market_session_state": current_market_session,
+            "lane_execution_ready": lane_execution_ready,
             "lane_data_freshness_ok": (
                 latest_market_date_ok
                 and not macro_data_missing
@@ -393,6 +407,10 @@ def build_market_regime_row(
             "latest_market_date": latest_market_date.isoformat(),
             "expected_min_market_date": expected_min_market_date.isoformat(),
             "latest_market_date_ok": latest_market_date_ok,
+            "market_calendar_state": calendar_row.market_calendar_state,
+            "day_name": calendar_row.day_name,
+            "last_cash_session_date": calendar_row.last_cash_session_date.isoformat(),
+            "market_session_state": current_market_session,
             "data_status": market_data_statuses,
             "market_data_latency_minutes": market_data_latency_minutes,
             "recency_ok": latest_market_date_ok,
@@ -439,5 +457,6 @@ def build_market_regime_row(
         "evidence": evidence,
         "as_of_utc": now_utc.isoformat(),
         "data_freshness_ok": bool(primary_lane["lane_data_freshness_ok"]),
+        "execution_ready": bool(primary_lane["lane_execution_ready"]),
     }
     return row

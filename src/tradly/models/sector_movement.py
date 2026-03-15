@@ -15,7 +15,13 @@ from tradly.models.calibration import (
 )
 from tradly.models.market_regime import Bar, clamp
 from tradly.services.db_time import from_db_utc
-from tradly.services.market_calendar import previous_trading_day
+from tradly.services.market_calendar import (
+    build_trading_calendar_row,
+    horizon_execution_ready,
+    market_closed_reason_code,
+    market_session_state,
+    previous_trading_day,
+)
 
 
 MARKET_TZ = ZoneInfo("America/New_York")
@@ -137,6 +143,8 @@ def build_sector_movement_rows(
         }
 
     expected_min_market_date = previous_trading_day(now_utc.astimezone(MARKET_TZ).date())
+    calendar_row = build_trading_calendar_row(now_utc.astimezone(MARKET_TZ).date())
+    current_market_session = market_session_state(now_utc)
     broad_latest_ok = bool(broad_proxy_metrics) and all(
         metric["latest_market_date"] >= expected_min_market_date for metric in broad_proxy_metrics.values()
     )
@@ -250,6 +258,7 @@ def build_sector_movement_rows(
 
         def _build_lane(lane_id: str) -> dict[str, object]:
             horizon = LANE_TO_HORIZON[lane_id]
+            lane_execution_ready = horizon_execution_ready(horizon=horizon, now_utc=now_utc)
             assessment = assess_latency(
                 data_status=latest_status,
                 recency_ok=sector_latest_ok and broad_latest_ok,
@@ -294,6 +303,9 @@ def build_sector_movement_rows(
             for code in assessment.why_code:
                 if code not in lane_why_code:
                     lane_why_code.append(code)
+            calendar_reason = market_closed_reason_code(now_utc=now_utc)
+            if not lane_execution_ready and calendar_reason is not None:
+                lane_why_code.append(calendar_reason)
             if coverage_state != "sufficient_evidence" and "market_data_stale" not in lane_why_code:
                 lane_why_code.append("market_data_stale")
 
@@ -307,6 +319,8 @@ def build_sector_movement_rows(
                 "coverage_score": coverage_score,
                 "latency_assessment": assessment.to_dict(),
                 "why_code": lane_why_code,
+                "market_session_state": current_market_session,
+                "lane_execution_ready": lane_execution_ready,
                 "lane_data_freshness_ok": (
                     sector_proxy_valid
                     and (
@@ -363,6 +377,10 @@ def build_sector_movement_rows(
                 "latest_bar_utc": from_db_utc(latest.ts_utc).isoformat(),
                 "sector_proxy_latest_market_date": sector_latest_market_date.isoformat(),
                 "expected_min_market_date": expected_min_market_date.isoformat(),
+                "market_calendar_state": calendar_row.market_calendar_state,
+                "day_name": calendar_row.day_name,
+                "last_cash_session_date": calendar_row.last_cash_session_date.isoformat(),
+                "market_session_state": current_market_session,
                 "sector_proxy_latest_ok": sector_latest_ok,
                 "sector_proxy_status": latest_status,
                 "data_status": latest_status,
@@ -440,6 +458,7 @@ def build_sector_movement_rows(
                 "evidence": evidence,
                 "as_of_utc": now_utc.isoformat(),
                 "data_freshness_ok": bool(primary_lane["lane_data_freshness_ok"]),
+                "execution_ready": bool(primary_lane["lane_execution_ready"]),
             }
         )
 

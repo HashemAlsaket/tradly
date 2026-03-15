@@ -5,6 +5,13 @@ from datetime import datetime
 from math import log1p
 
 from tradly.models.calibration import ConfidenceInputs, compute_confidence, confidence_label, normalize_score
+from tradly.services.market_calendar import (
+    MARKET_TZ,
+    build_trading_calendar_row,
+    horizon_execution_ready,
+    market_closed_reason_code,
+    market_session_state,
+)
 
 
 RAW_SCORE_SCALE = 70.0
@@ -148,6 +155,8 @@ def build_sector_news_rows(
     now_utc: datetime,
 ) -> list[dict]:
     rows: list[dict] = []
+    calendar_row = build_trading_calendar_row(now_utc.astimezone(MARKET_TZ).date())
+    current_market_session = market_session_state(now_utc)
 
     for sector, members in sector_members.items():
         if sector in {"ETF", "Macro"}:
@@ -160,10 +169,17 @@ def build_sector_news_rows(
             "sector_scope": sector_scope,
             "member_symbols": members,
             "recent_interpretation_count": len(sector_items),
+            "market_calendar_state": calendar_row.market_calendar_state,
+            "day_name": calendar_row.day_name,
+            "last_cash_session_date": calendar_row.last_cash_session_date.isoformat(),
+            "market_session_state": current_market_session,
         }
 
         lane_diagnostics: dict[str, dict[str, object]] = {}
         for lane_id in ("near_term", "swing_term", "position_term"):
+            canonical_horizon = "1to3d" if lane_id == "near_term" else "1to2w" if lane_id == "swing_term" else "2to6w"
+            lane_execution_ready = horizon_execution_ready(horizon=canonical_horizon, now_utc=now_utc)
+            calendar_reason = market_closed_reason_code(now_utc=now_utc)
             lane_items: list[tuple[SectorNewsItem, float]] = []
             for item in sector_items:
                 if _lane_for_horizon(item.impact_horizon) != lane_id:
@@ -184,18 +200,21 @@ def build_sector_news_rows(
 
             article_count = len(lane_items)
             if article_count == 0:
+                why_code = ["sector_news_coverage_missing"]
+                if not lane_execution_ready and calendar_reason is not None:
+                    why_code.append(calendar_reason)
                 lane_diagnostics[lane_id] = {
                     "lane_id": lane_id,
-                    "canonical_horizon": (
-                        "1to3d" if lane_id == "near_term" else "1to2w" if lane_id == "swing_term" else "2to6w"
-                    ),
+                    "canonical_horizon": canonical_horizon,
                     "confidence_score": 20,
                     "confidence_label": "low",
                     "coverage_state": "insufficient_evidence",
                     "freshness_score": 25,
                     "coverage_score": 25,
-                    "why_code": ["sector_news_coverage_missing"],
+                    "why_code": why_code,
                     "lane_data_freshness_ok": False,
+                    "lane_execution_ready": lane_execution_ready,
+                    "market_session_state": current_market_session,
                     "article_count": 0,
                     "total_weight": 0.0,
                     "net_weight": 0.0,
@@ -268,12 +287,12 @@ def build_sector_news_rows(
                 why_code.append("limited_sector_catalyst_breadth")
             if freshness_score < 70:
                 why_code.append("news_freshness_reduced")
+            if not lane_execution_ready and calendar_reason is not None:
+                why_code.append(calendar_reason)
 
             lane_diagnostics[lane_id] = {
                 "lane_id": lane_id,
-                "canonical_horizon": (
-                    "1to3d" if lane_id == "near_term" else "1to2w" if lane_id == "swing_term" else "2to6w"
-                ),
+                "canonical_horizon": canonical_horizon,
                 "signal_direction": signal_direction,
                 "signal_strength": signal_strength,
                 "confidence_score": confidence_score,
@@ -283,6 +302,8 @@ def build_sector_news_rows(
                 "coverage_score": coverage_score,
                 "why_code": why_code,
                 "lane_data_freshness_ok": freshness_score >= 70,
+                "lane_execution_ready": lane_execution_ready,
+                "market_session_state": current_market_session,
                 "article_count": article_count,
                 "total_weight": round(total_weight, 4),
                 "net_weight": round(net_weight, 4),
@@ -345,6 +366,7 @@ def build_sector_news_rows(
                 "evidence": evidence,
                 "as_of_utc": now_utc.isoformat(),
                 "data_freshness_ok": bool(primary_lane["lane_data_freshness_ok"]),
+                "execution_ready": bool(primary_lane["lane_execution_ready"]),
             }
         )
 

@@ -243,8 +243,40 @@ def main() -> int:
         )
         conn.execute(
             """
-            INSERT INTO market_bars
-            SELECT * FROM tmp_market_bars
+            INSERT INTO market_bars (
+              symbol,
+              timeframe,
+              ts_utc,
+              as_of_utc,
+              open,
+              high,
+              low,
+              close,
+              volume,
+              vwap,
+              data_status,
+              source,
+              correction_seq,
+              ingested_at_utc,
+              updated_at_utc
+            )
+            SELECT
+              symbol,
+              timeframe,
+              ts_utc,
+              as_of_utc,
+              open,
+              high,
+              low,
+              close,
+              volume,
+              vwap,
+              data_status,
+              source,
+              correction_seq,
+              ingested_at_utc,
+              updated_at_utc
+            FROM tmp_market_bars
             ON CONFLICT(symbol, timeframe, ts_utc, correction_seq) DO UPDATE SET
               as_of_utc=excluded.as_of_utc,
               open=excluded.open,

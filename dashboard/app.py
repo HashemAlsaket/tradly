@@ -55,7 +55,24 @@ def _fmt_ct_from_iso(value: Any) -> str:
     parsed = _parse_dt(value)
     if parsed is None:
         return "UNSET"
-    return parsed.astimezone(CT_ZONE).strftime("%Y-%m-%d %H:%M:%S %Z")
+    return parsed.astimezone(CT_ZONE).strftime("%a %Y-%m-%d %I:%M %p %Z")
+
+
+def _fmt_now_ct(value: datetime) -> str:
+    return value.astimezone(CT_ZONE).strftime("%a %Y-%m-%d %I:%M %p %Z")
+
+
+def _fmt_session_date(value: Any) -> str:
+    parsed = _parse_dt(value)
+    if parsed is not None:
+        return parsed.astimezone(CT_ZONE).strftime("%a %b %-d")
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed_date = datetime.fromisoformat(value.strip()).date()
+            return parsed_date.strftime("%a %b %-d")
+        except ValueError:
+            return value
+    return "UNSET"
 
 
 def _render_theme() -> None:
@@ -85,56 +102,123 @@ def _render_theme() -> None:
           opacity: 0.78;
           margin-bottom: 0.55rem;
         }
+        .tradly-now-line {
+          font-size: 0.84rem;
+          opacity: 0.7;
+          margin: -0.35rem 0 0.65rem 0.05rem;
+        }
         .tradly-utility-box {
           border: 1px solid rgba(255, 255, 255, 0.09);
           border-radius: 12px;
-          padding: 0.55rem 0.75rem 0.35rem 0.75rem;
+          padding: 0.45rem 0.65rem 0.15rem 0.65rem;
           background: rgba(255, 255, 255, 0.02);
-          max-width: 18rem;
-          margin-bottom: 0.85rem;
+          max-width: 16rem;
+          margin-bottom: 0.4rem;
+        }
+        .tradly-command-card {
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 12px;
+          padding: 0.5rem 0.7rem 0.45rem 0.7rem;
+          background: rgba(255, 255, 255, 0.02);
+          min-height: 4.4rem;
+          margin-bottom: 0.4rem;
+        }
+        .tradly-command-label {
+          font-size: 0.72rem;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          opacity: 0.62;
+          margin-bottom: 0.2rem;
+        }
+        .tradly-command-value {
+          font-size: 1rem;
+          font-weight: 800;
+          line-height: 1.15;
+          margin-bottom: 0.12rem;
+        }
+        .tradly-command-note {
+          font-size: 0.79rem;
+          opacity: 0.84;
+          line-height: 1.25;
+        }
+        .tradly-command-detail {
+          margin-top: 0.18rem;
+          font-size: 0.72rem;
+          opacity: 0.66;
+          line-height: 1.2;
         }
         .tradly-card {
           border: 1px solid var(--tradly-card-border);
           border-left-width: 4px;
           border-radius: 14px;
-          padding: 0.9rem 1rem 0.8rem 1rem;
-          margin: 0 0 0.7rem 0;
-          background: rgba(255, 255, 255, 0.015);
+          padding: 0.7rem 0.85rem 0.65rem 0.85rem;
+          margin: 0 0 0.55rem 0;
+          background: rgba(255, 255, 255, 0.02);
+          max-width: 22rem;
         }
-        .tradly-card.buy { border-left-color: var(--tradly-buy); }
-        .tradly-card.sell { border-left-color: var(--tradly-sell); }
-        .tradly-card.watch { border-left-color: var(--tradly-watch); }
+        .tradly-card.buy {
+          border-left-color: var(--tradly-buy);
+          background: linear-gradient(90deg, rgba(116, 198, 157, 0.12), rgba(255, 255, 255, 0.01) 22%);
+          box-shadow: inset 0 0 0 1px rgba(116, 198, 157, 0.08);
+        }
+        .tradly-card.sell {
+          border-left-color: var(--tradly-sell);
+          background: linear-gradient(90deg, rgba(242, 132, 130, 0.12), rgba(255, 255, 255, 0.01) 22%);
+          box-shadow: inset 0 0 0 1px rgba(242, 132, 130, 0.08);
+        }
+        .tradly-card.watch {
+          border-left-color: var(--tradly-watch);
+          background: linear-gradient(90deg, rgba(246, 189, 96, 0.14), rgba(255, 255, 255, 0.01) 22%);
+          box-shadow: inset 0 0 0 1px rgba(246, 189, 96, 0.08);
+        }
         .tradly-card-top {
           display: flex;
-          justify-content: space-between;
-          align-items: baseline;
-          gap: 1rem;
+          align-items: center;
+          gap: 0.55rem;
         }
         .tradly-symbol {
-          font-size: 1.65rem;
+          font-size: 1.1rem;
           font-weight: 800;
-          line-height: 1.05;
+          line-height: 1.1;
+        }
+        .tradly-symbol-line {
+          display: flex;
+          align-items: center;
+          gap: 0.45rem;
+          flex-wrap: wrap;
         }
         .tradly-confidence {
-          font-size: 1.45rem;
+          font-size: 0.88rem;
           font-weight: 800;
-          letter-spacing: -0.02em;
+          letter-spacing: -0.01em;
+          padding: 0.1rem 0.42rem;
+          border-radius: 999px;
+          line-height: 1.2;
+        }
+        .tradly-card.buy .tradly-confidence {
+          color: #173f2b;
+          background: rgba(116, 198, 157, 0.95);
+        }
+        .tradly-card.sell .tradly-confidence {
+          color: #4a1818;
+          background: rgba(242, 132, 130, 0.95);
+        }
+        .tradly-card.watch .tradly-confidence {
+          color: #4c3606;
+          background: rgba(246, 189, 96, 0.95);
         }
         .tradly-confidence-label {
-          font-size: 0.72rem;
-          opacity: 0.7;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
+          display: none;
         }
         .tradly-meta {
-          margin-top: 0.25rem;
-          font-size: 0.88rem;
+          margin-top: 0.18rem;
+          font-size: 0.8rem;
           opacity: 0.82;
         }
         .tradly-reason {
-          margin-top: 0.55rem;
-          font-size: 0.86rem;
-          opacity: 0.92;
+          margin-top: 0.22rem;
+          font-size: 0.8rem;
+          opacity: 0.78;
         }
         </style>
         """,
@@ -312,16 +396,86 @@ def _render_kpi(label: str, value: str) -> None:
     st.metric(label, value)
 
 
+def _market_status_copy(freshness: dict[str, Any], metrics: dict[str, Any], now_utc: datetime) -> tuple[str, str]:
+    session = str(freshness.get("market_session_state", metrics.get("market_session_state", ""))).strip().lower()
+    last_cash_session = metrics.get("last_cash_session_date")
+    if session == "weekend":
+        return "Closed weekend", f"Last cash session { _fmt_session_date(last_cash_session) }"
+    if session == "holiday":
+        return "Closed holiday", f"Last cash session { _fmt_session_date(last_cash_session) }"
+    if session == "pre_market":
+        return "Pre-market", f"Last cash session { _fmt_session_date(last_cash_session) }"
+    if session == "after_hours":
+        return "After hours", f"Last cash session { _fmt_session_date(last_cash_session) }"
+    if session == "market_hours":
+        return "Market open", "Live cash session"
+    return _fmt_age_from_iso(metrics.get("latest_daily_bar_utc"), now_utc), "Market session unclear"
+
+
+def _freshness_brief(value: Any, now_utc: datetime) -> str:
+    age_text = _fmt_age_from_iso(value, now_utc)
+    parsed = _parse_dt(value)
+    if parsed is None:
+        return age_text
+    age_hours = max(0.0, (now_utc - parsed.astimezone(timezone.utc)).total_seconds() / 3600.0)
+    if age_hours <= 18:
+        return "Fresh today"
+    if age_hours <= 36:
+        return "Fresh yesterday"
+    return age_text
+
+
+def _render_status_card(label: str, value: str, note: str, detail: str | None = None) -> None:
+    detail_html = f'<div class="tradly-status-detail">{detail}</div>' if detail else ""
+    st.markdown(
+        f"""
+        <div class="tradly-command-card">
+          <div class="tradly-command-label">{label}</div>
+          <div class="tradly-command-value">{value}</div>
+          <div class="tradly-command-note">{note}</div>
+          <div class="tradly-command-detail">{detail or ''}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _render_top_status(snapshot: dict, now_utc: datetime, state: str, reasons: list[str], warnings: list[str]) -> None:
     freshness = snapshot.get("freshness", {}) if isinstance(snapshot, dict) else {}
     metrics = freshness.get("metrics", {}) if isinstance(freshness, dict) else {}
+    market_value, market_note = _market_status_copy(freshness, metrics, now_utc)
+    short_term_ready = bool(metrics.get("short_horizon_execution_ready", False))
+    short_value = "Active" if short_term_ready else "Deferred"
+    short_note = "Tactical 1-3 day execution is live." if short_term_ready else "Tactical 1-3 day execution waits for the next cash session."
+    medium_ready = bool(metrics.get("medium_horizon_thesis_usable", False))
+    medium_value = "Active" if medium_ready else "Limited"
+    medium_note = (
+        f"Medium-horizon thesis is active. News { _freshness_brief(metrics.get('latest_news_pull_utc'), now_utc) }, LLM { _freshness_brief(metrics.get('latest_interp_utc'), now_utc) }."
+        if medium_ready
+        else "Medium-horizon thesis is limited until fresher context arrives."
+    )
     c1, c2, c3 = st.columns(3)
     with c1:
-        _render_kpi("Market", _fmt_age_from_iso(metrics.get("latest_daily_bar_utc"), now_utc))
+        _render_status_card(
+            "Market",
+            market_value,
+            market_note,
+            f"Now: {_fmt_now_ct(now_utc)}<br/>Latest market data: {_fmt_ct_from_iso(metrics.get('latest_daily_bar_utc'))}",
+        )
     with c2:
-        _render_kpi("News", _fmt_age_from_iso(metrics.get("latest_news_pull_utc"), now_utc))
+        _render_status_card(
+            "Short-Term",
+            short_value,
+            short_note,
+            f"Now: {_fmt_now_ct(now_utc)}<br/>Latest market data: {_fmt_ct_from_iso(metrics.get('latest_daily_bar_utc'))}",
+        )
     with c3:
-        _render_kpi("LLM", _fmt_age_from_iso(metrics.get("latest_interp_utc"), now_utc))
+        _render_status_card(
+            "1-2w / 2-6w",
+            medium_value,
+            medium_note,
+            f"Now: {_fmt_now_ct(now_utc)}<br/>Latest news: {_fmt_ct_from_iso(metrics.get('latest_news_pull_utc'))}<br/>Latest LLM review: {_fmt_ct_from_iso(metrics.get('latest_interp_utc'))}",
+        )
     if reasons:
         st.error("Blocked by: " + ", ".join(reasons))
     elif state == "ready":
@@ -452,6 +606,8 @@ def _humanize_reason(code: str) -> str:
         "symbol movement supports bearish": "price weakness",
         "component conflict high": "mixed signals",
         "range expanding conviction reduced": "wide range",
+        "market closed weekend": "market closed for weekend",
+        "market closed holiday": "market closed for holiday",
     }
     return replacements.get(text, text)
 
@@ -490,6 +646,7 @@ def _decision_rows(ensemble_payload: dict) -> list[dict[str, Any]]:
                 "Horizon": horizon,
                 "Confidence": int(horizon_row.get("confidence_score", row.get("confidence_score", 0)) or 0),
                 "Reason": _humanize_reason(str(((horizon_row.get("why_code", []) or [""])[:1] or [""])[0])),
+                "ExecutionReady": bool(horizon_row.get("execution_ready", True)),
             }
         )
     return sorted(
@@ -515,9 +672,9 @@ def _render_action_list(title: str, rows: list[dict[str, Any]]) -> None:
         unsafe_allow_html=True,
     )
     section_blurbs = {
-        "Buy": "Actionable bullish setups.",
-        "Sell / Trim": "Actionable bearish or reduce-risk setups.",
-        "Watch": "Not actionable yet, but worth monitoring.",
+        "Buy": "Best bullish setups.",
+        "Sell / Trim": "Best bearish or reduce-risk setups.",
+        "Watch": "Worth monitoring, not ready yet.",
     }
     blurb = section_blurbs.get(title, "")
     if blurb:
@@ -531,19 +688,23 @@ def _render_action_list(title: str, rows: list[dict[str, Any]]) -> None:
         horizon = str(row["Horizon"])
         confidence = int(row["Confidence"])
         reason = str(row["Reason"]).strip()
+        execution_ready = bool(row.get("ExecutionReady", True))
         horizon_label = _format_horizon_label(horizon)
         lane_name = _horizon_lane_name(horizon)
+        if execution_ready:
+            context_note = f"{lane_name.title()} • {horizon_label}"
+        else:
+            context_note = f"{lane_name.title()} • {horizon_label} • deferred until next session"
         st.markdown(
             f"""
             <div class="tradly-card {section_class}">
               <div class="tradly-card-top">
-                <div class="tradly-symbol">{symbol}</div>
-                <div>
-                  <div class="tradly-confidence-label">Confidence</div>
+                <div class="tradly-symbol-line">
+                  <div class="tradly-symbol">{symbol}</div>
                   <div class="tradly-confidence">{confidence}</div>
                 </div>
               </div>
-              <div class="tradly-meta">{lane_name.title()} • {horizon_label}</div>
+              <div class="tradly-meta">{context_note}</div>
               <div class="tradly-reason">{reason}</div>
             </div>
             """,
@@ -571,7 +732,7 @@ def _render_action_board(ensemble_payload: dict) -> None:
         key=lambda row: int(row["Confidence"]),
         reverse=True,
     )[:8]
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3 = st.columns([0.92, 0.92, 1.16], gap="medium")
     with c1:
         _render_action_list("Buy", buy_rows)
     with c2:
@@ -791,9 +952,13 @@ def main() -> None:
     )
 
     st.title("tradly")
+    st.markdown(f'<div class="tradly-now-line">Now { _fmt_now_ct(time_ctx.now_utc) }</div>', unsafe_allow_html=True)
 
-    utility_col, _ = st.columns([1, 5])
-    with utility_col:
+    freshness = freshness_snapshot.get("freshness", {}) if isinstance(freshness_snapshot, dict) else {}
+    metrics = freshness.get("metrics", {}) if isinstance(freshness, dict) else {}
+
+    bar1, bar2, bar3, bar4 = st.columns([0.95, 1.2, 1.15, 1.3])
+    with bar1:
         st.markdown('<div class="tradly-utility-box">', unsafe_allow_html=True)
         section = st.selectbox(
             "Navigate",
@@ -804,8 +969,36 @@ def main() -> None:
         )
         show_more_symbols = st.toggle("More Symbols", value=False, key="show_more_symbols")
         st.markdown("</div>", unsafe_allow_html=True)
+    with bar2:
+        market_value, market_note = _market_status_copy(freshness, metrics, time_ctx.now_utc)
+        _render_status_card(
+            "Market",
+            market_value,
+            f"Latest market: {_fmt_ct_from_iso(metrics.get('latest_daily_bar_utc'))}",
+            market_note,
+        )
+    with bar3:
+        short_term_ready = bool(metrics.get("short_horizon_execution_ready", False))
+        _render_status_card(
+            "Short-Term",
+            "Active" if short_term_ready else "Deferred",
+            "Execution live" if short_term_ready else "Execution waits for next cash session",
+            f"Latest market: {_fmt_ct_from_iso(metrics.get('latest_daily_bar_utc'))}",
+        )
+    with bar4:
+        medium_ready = bool(metrics.get("medium_horizon_thesis_usable", False))
+        medium_note = "Thesis active" if medium_ready else "Thesis limited"
+        _render_status_card(
+            "1-2w / 2-6w",
+            "Active" if medium_ready else "Limited",
+            medium_note,
+            f"News: {_fmt_ct_from_iso(metrics.get('latest_news_pull_utc'))}<br/>LLM: {_fmt_ct_from_iso(metrics.get('latest_interp_utc'))}",
+        )
 
-    _render_top_status(freshness_snapshot, time_ctx.now_utc, state, reasons, warnings)
+    if reasons:
+        st.error("Blocked by: " + ", ".join(reasons))
+    elif state == "ready":
+        st.success("Ready")
 
     if section == "Decisions":
         if state == "blocked":

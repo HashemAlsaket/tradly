@@ -147,7 +147,7 @@ class EnsembleTests(unittest.TestCase):
         row = rows[0]
         self.assertIn("range_expanding_conviction_reduced", row["why_code"])
 
-    def test_insufficient_near_term_becomes_blocked_in_horizon_summary(self) -> None:
+    def test_insufficient_near_term_becomes_research_only_when_market_is_closed(self) -> None:
         market = _row_with_lanes(
             "market",
             _lane(
@@ -186,7 +186,8 @@ class EnsembleTests(unittest.TestCase):
             now_utc=datetime(2026, 3, 15, 5, 0, tzinfo=timezone.utc),
         )
         row = rows[0]
-        self.assertEqual(row["horizon_summary"]["1to3d"]["state"], "blocked")
+        self.assertEqual(row["horizon_summary"]["1to3d"]["state"], "research_only")
+        self.assertFalse(row["horizon_summary"]["1to3d"]["execution_ready"])
         self.assertEqual(row["horizon_summary"]["1to2w"]["state"], "actionable")
 
     def test_swing_term_can_still_be_actionable_with_conflict_if_confidence_is_decent(self) -> None:
