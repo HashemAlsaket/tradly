@@ -62,9 +62,16 @@ SCOPE_ALIASES = {
     "basic materials": "basic_materials",
     "materials": "basic_materials",
     "real estate": "real_estate",
+    "media": "communication_services",
+    "entertainment": "communication_services",
+    "streaming": "communication_services",
+    "media entertainment": "communication_services",
+    "media and entertainment": "communication_services",
+    "streaming media": "communication_services",
     "symbol-specific": "symbol_specific",
     "symbol specific": "symbol_specific",
 }
+PLACEHOLDER_SCOPE_VALUES = {"unclear", "unknown", "unsure", "n/a", "na", "none", "unspecified"}
 
 
 def _load_dotenv(path: Path) -> None:
@@ -114,6 +121,8 @@ def _call_openai(model: str, api_key: str, batch_articles: list[dict]) -> dict:
         "3. Use exact scope ids from the allowed list only. Prefer underscores, not spaces.\n"
         "   Examples: `broad_market`, `risk_sentiment`, `symbol_specific`, `financial_services`.\n"
         "4. Use `multiple` only when the article clearly affects several distinct scopes and no single scope dominates.\n"
+        "   Never output placeholder scopes like `unclear`, `unknown`, or `n/a`.\n"
+        "   If scope is uncertain, choose the closest canonical scope instead.\n"
         "5. Use `bullish` or `bearish` for direct directional pressure on a sector or symbol.\n"
         "6. Use `risk_on` or `risk_off` for broader market tone or cross-asset posture.\n"
         "7. Use `2to6w` when the article's impact is more durable than a normal swing horizon.\n"
@@ -199,6 +208,8 @@ def _normalize_impact_scope(value: object) -> str:
         return ""
     normalized = raw.replace("/", " ").replace("-", " ").replace("_", " ")
     normalized = " ".join(normalized.split())
+    if normalized in PLACEHOLDER_SCOPE_VALUES:
+        return ""
     alias_hit = SCOPE_ALIASES.get(normalized)
     if alias_hit:
         return alias_hit
@@ -231,6 +242,23 @@ def _ensure_tables(conn) -> None:
           based_on_provided_evidence BOOLEAN NOT NULL,
           calculation_performed BOOLEAN NOT NULL,
           interpreted_at_utc TIMESTAMP NOT NULL,
+          ingested_at_utc TIMESTAMP NOT NULL,
+          PRIMARY KEY (provider, provider_news_id, model, prompt_version)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS news_interpretation_rejections (
+          provider TEXT NOT NULL,
+          provider_news_id TEXT NOT NULL,
+          model TEXT NOT NULL,
+          prompt_version TEXT NOT NULL,
+          rejection_reason TEXT NOT NULL,
+          raw_impact_scope TEXT,
+          raw_payload_json TEXT NOT NULL,
+          normalized_payload_json TEXT NOT NULL,
+          logged_at_utc TIMESTAMP NOT NULL,
           ingested_at_utc TIMESTAMP NOT NULL,
           PRIMARY KEY (provider, provider_news_id, model, prompt_version)
         )
@@ -348,6 +376,7 @@ def main() -> int:
 
         inserted = 0
         invalid_reason_counts: dict[str, int] = {}
+        invalid_scope_examples: list[dict[str, str]] = []
         missing_for_batch_total = 0
         rounds_completed = 0
         rows_seen_total = 0
@@ -390,6 +419,7 @@ def main() -> int:
             inserted_before_round = inserted
             for i in range(0, len(pending), BATCH_SIZE):
                 batch = pending[i : i + BATCH_SIZE]
+                batch_by_key = {(item["provider"], item["provider_news_id"]): item for item in batch}
                 out = None
                 for attempt in range(1, batch_retries + 1):
                     try:
@@ -407,10 +437,60 @@ def main() -> int:
 
                 valid_by_key: dict[tuple[str, str], dict] = {}
                 for item in interpretations:
+                    raw_item = item if isinstance(item, dict) else None
                     item = _normalize_record(item) if isinstance(item, dict) else item
                     ok, reason = _validate_record(item)
                     if not ok:
                         invalid_reason_counts[reason] = invalid_reason_counts.get(reason, 0) + 1
+                        if (
+                            reason == "impact_scope_invalid"
+                            and isinstance(item, dict)
+                            and len(invalid_scope_examples) < 5
+                        ):
+                            provider = str(item.get("provider", "")).strip()
+                            news_id = str(item.get("provider_news_id", "")).strip()
+                            batch_item = batch_by_key.get((provider, news_id), {})
+                            invalid_scope_examples.append(
+                                {
+                                    "provider_news_id": news_id,
+                                    "raw_scope": str(item.get("impact_scope", "")).strip(),
+                                    "headline": str(batch_item.get("headline", "")).strip()[:140],
+                                }
+                            )
+                        if isinstance(item, dict):
+                            provider = str(item.get("provider", "")).strip()
+                            news_id = str(item.get("provider_news_id", "")).strip()
+                            if provider and news_id:
+                                raw_scope = ""
+                                if isinstance(raw_item, dict):
+                                    raw_scope = str(raw_item.get("impact_scope", "")).strip()
+                                conn.execute(
+                                    """
+                                    INSERT INTO news_interpretation_rejections (
+                                      provider, provider_news_id, model, prompt_version, rejection_reason, raw_impact_scope,
+                                      raw_payload_json, normalized_payload_json, logged_at_utc, ingested_at_utc
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    ON CONFLICT(provider, provider_news_id, model, prompt_version) DO UPDATE SET
+                                      rejection_reason=excluded.rejection_reason,
+                                      raw_impact_scope=excluded.raw_impact_scope,
+                                      raw_payload_json=excluded.raw_payload_json,
+                                      normalized_payload_json=excluded.normalized_payload_json,
+                                      logged_at_utc=excluded.logged_at_utc,
+                                      ingested_at_utc=excluded.ingested_at_utc
+                                    """,
+                                    (
+                                        provider,
+                                        news_id,
+                                        model,
+                                        PROMPT_VERSION,
+                                        reason,
+                                        raw_scope,
+                                        json.dumps(raw_item or {}, ensure_ascii=True),
+                                        json.dumps(item, ensure_ascii=True),
+                                        now_db_utc,
+                                        now_db_utc,
+                                    ),
+                                )
                         continue
                     provider = str(item.get("provider", "")).strip()
                     news_id = str(item.get("provider_news_id", "")).strip()
@@ -503,6 +583,8 @@ def main() -> int:
     print(f"remaining_recent_pending_24h={remaining_recent_pending}")
     if invalid_reason_counts:
         print(f"interpretation_invalid_reasons={invalid_reason_counts}")
+    if invalid_scope_examples:
+        print(f"invalid_scope_examples={json.dumps(invalid_scope_examples, ensure_ascii=True)}")
     print(f"model={model}")
     print(f"prompt_version={PROMPT_VERSION}")
     print(f"lookback_days={lookback_days}")

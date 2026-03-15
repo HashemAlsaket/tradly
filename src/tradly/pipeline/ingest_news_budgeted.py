@@ -17,6 +17,7 @@ WATCHLIST_PATH = Path("data/manual/news_seed_watchlists.json")
 DEFAULT_DAILY_BUDGET = 100
 DEFAULT_LIMIT_PER_REQUEST = 3
 DEFAULT_PULLS_PER_BUCKET_PER_RUN = 1
+DEFAULT_MIN_SYMBOL_RELEVANCE = 15.0
 REQUIRED_BUCKETS = (
     "core_semis",
     "us_macro",
@@ -25,6 +26,18 @@ REQUIRED_BUCKETS = (
     "sector_context",
     "event_reserve",
 )
+
+
+def _min_symbol_relevance() -> float:
+    raw = os.getenv("TRADLY_MARKETAUX_MIN_SYMBOL_RELEVANCE", str(DEFAULT_MIN_SYMBOL_RELEVANCE)).strip()
+    try:
+        return float(raw)
+    except ValueError:
+        print(
+            f"warning=invalid_TRADLY_MARKETAUX_MIN_SYMBOL_RELEVANCE value={raw} "
+            f"using_default={DEFAULT_MIN_SYMBOL_RELEVANCE}"
+        )
+        return DEFAULT_MIN_SYMBOL_RELEVANCE
 
 
 def _load_dotenv(path: Path) -> None:
@@ -201,6 +214,7 @@ def main() -> int:
     time_ctx = get_time_context()
     now_db_utc = to_db_utc(time_ctx.now_utc)
     published_after_utc = _normalize_published_after(os.getenv("TRADLY_NEWS_PUBLISHED_AFTER_UTC", ""))
+    min_symbol_relevance = _min_symbol_relevance()
     # Budgeting is aligned to trader workflow timezone (America/Chicago), not UTC midnight.
     request_date_utc = time_ctx.now_local.date()
 
@@ -247,6 +261,7 @@ def main() -> int:
 
         events_upserted_total = 0
         symbols_upserted_total = 0
+        filtered_symbol_links_total = 0
         requests_made = 0
         stop_all_buckets = False
 
@@ -307,6 +322,7 @@ def main() -> int:
 
                 event_rows: list[tuple] = []
                 symbol_rows: list[tuple] = []
+                filtered_symbol_links = 0
                 if response_status == "success":
                     for item in articles:
                         news_id = str(item.get("uuid") or "").strip()
@@ -338,14 +354,18 @@ def main() -> int:
                         entities = item.get("entities") if isinstance(item.get("entities"), list) else []
                         for ent in entities:
                             symbol = str(ent.get("symbol") or "").strip().upper()
+                            relevance = float(ent.get("match_score")) if ent.get("match_score") is not None else None
                             if not symbol or symbol not in allowed_symbols:
+                                continue
+                            if relevance is None or relevance < min_symbol_relevance:
+                                filtered_symbol_links += 1
                                 continue
                             symbol_rows.append(
                                 (
                                     "marketaux",
                                     news_id,
                                     symbol,
-                                    float(ent.get("match_score")) if ent.get("match_score") is not None else None,
+                                    relevance,
                                     published_at,
                                     now_db_utc,
                                 )
@@ -410,9 +430,11 @@ def main() -> int:
 
                 events_upserted_total += len(event_rows)
                 symbols_upserted_total += len(symbol_rows)
+                filtered_symbol_links_total += filtered_symbol_links
                 print(
                     f"bucket={bucket} status={response_status} req_used={used_by_bucket[bucket]}/{cap} "
-                    f"events={len(event_rows)} symbol_links={len(symbol_rows)}"
+                    f"events={len(event_rows)} symbol_links={len(symbol_rows)} "
+                    f"filtered_symbol_links={filtered_symbol_links}"
                 )
                 if response_status == "limit_reached":
                     stop_all_buckets = True
@@ -426,6 +448,8 @@ def main() -> int:
     print(f"run_max_requests={run_max_requests}")
     print(f"events_upserted={events_upserted_total}")
     print(f"symbol_links_upserted={symbols_upserted_total}")
+    print(f"symbol_links_filtered_below_relevance={filtered_symbol_links_total}")
+    print(f"min_symbol_relevance={min_symbol_relevance}")
     print(f"daily_budget={daily_budget}")
     return 0
 

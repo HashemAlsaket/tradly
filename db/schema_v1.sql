@@ -289,3 +289,17 @@ CREATE TABLE IF NOT EXISTS news_interpretations (
   PRIMARY KEY (provider, provider_news_id, model, prompt_version),
   FOREIGN KEY (provider, provider_news_id) REFERENCES news_events(provider, provider_news_id)
 );
+
+CREATE TABLE IF NOT EXISTS news_interpretation_rejections (
+  provider TEXT NOT NULL,
+  provider_news_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  rejection_reason TEXT NOT NULL,
+  raw_impact_scope TEXT,
+  raw_payload_json TEXT NOT NULL,
+  normalized_payload_json TEXT NOT NULL,
+  logged_at_utc TIMESTAMP NOT NULL,
+  ingested_at_utc TIMESTAMP NOT NULL,
+  PRIMARY KEY (provider, provider_news_id, model, prompt_version)
+);

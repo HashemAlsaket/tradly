@@ -50,6 +50,18 @@ class DashboardStateTests(unittest.TestCase):
                 "input_audit": {"status": "ready"},
                 "rows": [{"scope_id": "NVDA"}],
             },
+            "recommendation_payload": {
+                "run_timestamp_utc": "2026-03-14T21:29:30+00:00",
+                "quality_audit": {"status": "pass"},
+                "input_audit": {"status": "ready"},
+                "rows": [{"scope_id": "NVDA", "recommended_action": "Buy"}],
+            },
+            "review_payload": {
+                "run_timestamp_utc": "2026-03-14T21:29:40+00:00",
+                "quality_audit": {"status": "pass"},
+                "input_audit": {"status": "ready"},
+                "rows": [{"scope_id": "NVDA", "recommended_action": "Buy", "review_disposition": "review_required"}],
+            },
         }
 
     def test_ready_when_freshness_and_specialist_artifacts_are_aligned(self) -> None:
@@ -89,6 +101,24 @@ class DashboardStateTests(unittest.TestCase):
         self.assertEqual(state, "blocked")
         self.assertIn("symbol_news_missing", reasons)
         self.assertIn("sector_news_missing", reasons)
+        self.assertEqual(warnings, [])
+
+    def test_blocks_when_recommendation_rows_are_missing(self) -> None:
+        kwargs = self._base_kwargs()
+        kwargs["recommendation_payload"]["rows"] = []
+        state, reasons, warnings = _compute_system_state(**kwargs)
+
+        self.assertEqual(state, "blocked")
+        self.assertIn("recommendation_missing", reasons)
+        self.assertEqual(warnings, [])
+
+    def test_blocks_when_review_rows_are_missing(self) -> None:
+        kwargs = self._base_kwargs()
+        kwargs["review_payload"]["rows"] = []
+        state, reasons, warnings = _compute_system_state(**kwargs)
+
+        self.assertEqual(state, "blocked")
+        self.assertIn("recommendation_review_missing", reasons)
         self.assertEqual(warnings, [])
 
 

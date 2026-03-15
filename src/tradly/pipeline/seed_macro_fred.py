@@ -155,8 +155,22 @@ def main() -> int:
         )
         conn.execute(
             """
-            INSERT INTO macro_points
-            SELECT * FROM tmp_macro_points
+            INSERT INTO macro_points (
+              series_id,
+              ts_utc,
+              as_of_utc,
+              value,
+              source,
+              ingested_at_utc
+            )
+            SELECT
+              series_id,
+              ts_utc,
+              as_of_utc,
+              value,
+              source,
+              ingested_at_utc
+            FROM tmp_macro_points
             ON CONFLICT(series_id, ts_utc) DO UPDATE SET
               as_of_utc=excluded.as_of_utc,
               value=excluded.value,

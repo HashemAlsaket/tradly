@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from tradly.models.recommendation import action_priority
 from tradly.services.time_context import get_time_context
 
 
@@ -293,6 +294,8 @@ def _compute_system_state(
     sector_news_payload: dict,
     range_payload: dict,
     ensemble_payload: dict,
+    recommendation_payload: dict,
+    review_payload: dict,
 ) -> tuple[str, list[str], list[str]]:
     reasons: list[str] = []
     warnings: list[str] = []
@@ -308,6 +311,8 @@ def _compute_system_state(
     sector_news_rows = sector_news_payload.get("rows")
     range_rows = range_payload.get("rows")
     ensemble_rows = ensemble_payload.get("rows")
+    recommendation_rows = recommendation_payload.get("rows")
+    review_rows = review_payload.get("rows")
     if not isinstance(market_rows, list) or not market_rows:
         reasons.append("market_regime_missing")
     if not isinstance(sector_rows, list) or not sector_rows:
@@ -322,6 +327,10 @@ def _compute_system_state(
         reasons.append("range_expectation_missing")
     if not isinstance(ensemble_rows, list) or not ensemble_rows:
         reasons.append("ensemble_missing")
+    if not isinstance(recommendation_rows, list) or not recommendation_rows:
+        reasons.append("recommendation_missing")
+    if not isinstance(review_rows, list) or not review_rows:
+        reasons.append("recommendation_review_missing")
 
     market_quality = _quality_status(market_payload)
     sector_quality = _quality_status(sector_payload)
@@ -330,6 +339,8 @@ def _compute_system_state(
     sector_news_quality = _quality_status(sector_news_payload)
     range_quality = _quality_status(range_payload)
     ensemble_quality = _quality_status(ensemble_payload)
+    recommendation_quality = _quality_status(recommendation_payload)
+    review_quality = _quality_status(review_payload)
     if market_quality == "fail":
         reasons.append("market_regime_quality_fail")
     elif market_quality == "missing":
@@ -358,6 +369,14 @@ def _compute_system_state(
         reasons.append("ensemble_quality_fail")
     elif ensemble_quality == "missing":
         warnings.append("ensemble_quality_missing")
+    if recommendation_quality == "fail":
+        reasons.append("recommendation_quality_fail")
+    elif recommendation_quality == "missing":
+        warnings.append("recommendation_quality_missing")
+    if review_quality == "fail":
+        reasons.append("recommendation_review_quality_fail")
+    elif review_quality == "missing":
+        warnings.append("recommendation_review_quality_missing")
 
     snapshot_written_at = _parse_dt(freshness_snapshot.get("written_at_utc"))
     latest_model_run = _latest_run_timestamp(
@@ -368,6 +387,8 @@ def _compute_system_state(
         sector_news_payload,
         range_payload,
         ensemble_payload,
+        recommendation_payload,
+        review_payload,
     )
     if snapshot_written_at is not None and latest_model_run is not None and snapshot_written_at < latest_model_run:
         reasons.append("freshness_snapshot_outdated_for_latest_model_runs")
@@ -380,6 +401,8 @@ def _compute_system_state(
         ("symbol_news", symbol_news_payload),
         ("sector_news", sector_news_payload),
         ("ensemble", ensemble_payload),
+        ("recommendation", recommendation_payload),
+        ("recommendation_review", review_payload),
     ):
         input_audit = payload.get("input_audit", {}) if isinstance(payload, dict) else {}
         status = str(input_audit.get("status", "")).strip().lower()
@@ -541,56 +564,6 @@ def _top_horizon_reasons(ensemble_payload: dict, horizon: str, state: str, *, li
     return [f"{reason} ({count})" for reason, count in ranked[:limit]]
 
 
-def _action_for_horizon(horizon_row: dict[str, Any]) -> str:
-    state = str(horizon_row.get("state", "missing")).strip().lower()
-    direction = str(horizon_row.get("signal_direction", "neutral")).strip().lower()
-    confidence = int(horizon_row.get("confidence_score", 0) or 0)
-    if state == "actionable":
-        if direction == "bullish":
-            return "Buy"
-        if direction == "bearish":
-            return "Sell/Trim"
-        return "Hold"
-    if state == "research_only":
-        if direction == "bullish" and confidence >= 60:
-            return "Watch Buy"
-        if direction == "bearish" and confidence >= 55:
-            return "Watch Trim"
-        return "Hold/Watch"
-    if state == "blocked":
-        return "Blocked"
-    if state == "not_supported":
-        return "N/A"
-    return "Unknown"
-
-
-def _action_priority(action: str) -> int:
-    return {
-        "Buy": 5,
-        "Sell/Trim": 5,
-        "Watch Buy": 4,
-        "Watch Trim": 4,
-        "Hold": 3,
-        "Hold/Watch": 2,
-        "Blocked": 1,
-        "N/A": 0,
-        "Unknown": 0,
-    }.get(action, 0)
-
-
-def _best_decision(summary: dict[str, Any]) -> tuple[str, str]:
-    horizon_rows = summary if isinstance(summary, dict) else {}
-    ranked: list[tuple[int, int, str, str]] = []
-    for horizon in ("1to3d", "1to2w", "2to6w"):
-        horizon_row = horizon_rows.get(horizon, {}) if isinstance(horizon_rows, dict) else {}
-        action = _action_for_horizon(horizon_row if isinstance(horizon_row, dict) else {})
-        confidence = int((horizon_row if isinstance(horizon_row, dict) else {}).get("confidence_score", 0) or 0)
-        ranked.append((_action_priority(action), confidence, horizon, action))
-    ranked.sort(reverse=True)
-    _, _, horizon, action = ranked[0]
-    return action, horizon
-
-
 def _humanize_reason(code: str) -> str:
     text = str(code).strip().replace("_", " ")
     replacements = {
@@ -628,34 +601,34 @@ def _horizon_lane_name(horizon: str) -> str:
     }.get(str(horizon), "unknown")
 
 
-def _decision_rows(ensemble_payload: dict) -> list[dict[str, Any]]:
-    rows = ensemble_payload.get("rows", [])
+def _decision_rows(review_payload: dict) -> list[dict[str, Any]]:
+    rows = review_payload.get("rows", [])
     if not isinstance(rows, list):
         return []
     out: list[dict[str, Any]] = []
     for row in rows:
-        summary = row.get("horizon_summary", {}) if isinstance(row, dict) else {}
-        if not isinstance(summary, dict):
+        if not isinstance(row, dict):
             continue
-        action, horizon = _best_decision(summary)
-        horizon_row = summary.get(horizon, {}) if isinstance(summary.get(horizon, {}), dict) else {}
         out.append(
             {
                 "Symbol": str(row.get("scope_id", "UNSET")),
-                "Action": action,
-                "Horizon": horizon,
-                "Confidence": int(horizon_row.get("confidence_score", row.get("confidence_score", 0)) or 0),
-                "Reason": _humanize_reason(str(((horizon_row.get("why_code", []) or [""])[:1] or [""])[0])),
-                "ExecutionReady": bool(horizon_row.get("execution_ready", True)),
+                "Action": str(row.get("recommended_action", "Unknown")),
+                "Horizon": str(row.get("recommended_horizon", "UNSET")),
+                "Confidence": int(row.get("confidence_score", 0) or 0),
+                "Reason": _humanize_reason(str(row.get("primary_reason_code", ""))),
+                "ExecutionReady": bool(row.get("execution_ready", True)),
+                "RecommendationClass": str(row.get("recommendation_class", "unknown")),
+                "ReviewDisposition": str(row.get("review_disposition", "watch")),
+                "ReviewBucket": str(row.get("review_bucket", "watchlist")),
+                "ReviewReason": str(row.get("review_reason_code", "")),
             }
         )
     return sorted(
         out,
         key=lambda row: (
-            _action_priority(str(row["Action"])),
+            {"promote": 3, "review_required": 2, "watch": 1, "defer": 0, "blocked": -1}.get(str(row["ReviewDisposition"]), -1),
+            action_priority(str(row["Action"])),
             int(row["Confidence"]),
-            str(row["Horizon"]) == "2to6w",
-            str(row["Horizon"]) == "1to2w",
         ),
         reverse=True,
     )
@@ -682,53 +655,105 @@ def _render_action_list(title: str, rows: list[dict[str, Any]]) -> None:
     if not rows:
         st.caption("None")
         return
+    approved_rows = [row for row in rows if str(row.get("ReviewDisposition", "")) == "promote"]
+    review_rows = [row for row in rows if str(row.get("ReviewDisposition", "")) == "review_required"]
+    other_rows = [row for row in rows if str(row.get("ReviewDisposition", "")) not in {"promote", "review_required"}]
     st.markdown(f'<div class="tradly-section-subtle">{len(rows)} shown</div>', unsafe_allow_html=True)
-    for row in rows:
-        symbol = str(row["Symbol"])
-        horizon = str(row["Horizon"])
-        confidence = int(row["Confidence"])
-        reason = str(row["Reason"]).strip()
-        execution_ready = bool(row.get("ExecutionReady", True))
-        horizon_label = _format_horizon_label(horizon)
-        lane_name = _horizon_lane_name(horizon)
-        if execution_ready:
-            context_note = f"{lane_name.title()} • {horizon_label}"
-        else:
-            context_note = f"{lane_name.title()} • {horizon_label} • deferred until next session"
-        st.markdown(
-            f"""
-            <div class="tradly-card {section_class}">
-              <div class="tradly-card-top">
-                <div class="tradly-symbol-line">
-                  <div class="tradly-symbol">{symbol}</div>
-                  <div class="tradly-confidence">{confidence}</div>
+
+    def _render_rows(group_rows: list[dict[str, Any]], *, label: str | None = None) -> None:
+        if label and group_rows:
+            st.caption(label)
+        for row in group_rows:
+            symbol = str(row["Symbol"])
+            horizon = str(row["Horizon"])
+            confidence = int(row["Confidence"])
+            reason = str(row["Reason"]).strip()
+            execution_ready = bool(row.get("ExecutionReady", True))
+            review_disposition = str(row.get("ReviewDisposition", "")).strip()
+            horizon_label = _format_horizon_label(horizon)
+            lane_name = _horizon_lane_name(horizon)
+            if execution_ready:
+                context_note = f"{lane_name.title()} • {horizon_label}"
+            else:
+                context_note = f"{lane_name.title()} • {horizon_label} • deferred until next session"
+            if review_disposition == "review_required":
+                context_note = f"{context_note} • needs review"
+            elif review_disposition == "promote":
+                context_note = f"{context_note} • approved"
+            st.markdown(
+                f"""
+                <div class="tradly-card {section_class}">
+                  <div class="tradly-card-top">
+                    <div class="tradly-symbol-line">
+                      <div class="tradly-symbol">{symbol}</div>
+                      <div class="tradly-confidence">{confidence}</div>
+                    </div>
+                  </div>
+                  <div class="tradly-meta">{context_note}</div>
+                  <div class="tradly-reason">{reason}</div>
                 </div>
-              </div>
-              <div class="tradly-meta">{context_note}</div>
-              <div class="tradly-reason">{reason}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                """,
+                unsafe_allow_html=True,
+            )
+
+    if approved_rows:
+        _render_rows(approved_rows, label="Approved")
+    if review_rows:
+        _render_rows(review_rows, label="Needs Review")
+    if other_rows:
+        _render_rows(other_rows)
 
 
-def _render_action_board(ensemble_payload: dict) -> None:
-    ranked_rows = _decision_rows(ensemble_payload)
+def _render_action_board(review_payload: dict) -> None:
+    ranked_rows = _decision_rows(review_payload)
     if not ranked_rows:
         st.caption("No decisions available.")
         return
+    promote_or_review_buy = {
+        str(row["Symbol"])
+        for row in ranked_rows
+        if str(row["Action"]) == "Buy" and str(row["ReviewDisposition"]) in {"promote", "review_required"}
+    }
+    promote_or_review_sell = {
+        str(row["Symbol"])
+        for row in ranked_rows
+        if str(row["Action"]) == "Sell/Trim" and str(row["ReviewDisposition"]) in {"promote", "review_required"}
+    }
     buy_rows = sorted(
-        [row for row in ranked_rows if str(row["Action"]) == "Buy"],
-        key=lambda row: int(row["Confidence"]),
+        [
+            row
+            for row in ranked_rows
+            if str(row["Action"]) == "Buy" and str(row["ReviewDisposition"]) in {"promote", "review_required"}
+        ],
+        key=lambda row: (
+            1 if str(row["ReviewDisposition"]) == "promote" else 0,
+            int(row["Confidence"]),
+        ),
         reverse=True,
     )[:6]
     sell_rows = sorted(
-        [row for row in ranked_rows if str(row["Action"]) == "Sell/Trim"],
-        key=lambda row: int(row["Confidence"]),
+        [
+            row
+            for row in ranked_rows
+            if str(row["Action"]) == "Sell/Trim" and str(row["ReviewDisposition"]) in {"promote", "review_required"}
+        ],
+        key=lambda row: (
+            1 if str(row["ReviewDisposition"]) == "promote" else 0,
+            int(row["Confidence"]),
+        ),
         reverse=True,
     )[:6]
     watch_rows = sorted(
-        [row for row in ranked_rows if str(row["Action"]).startswith("Watch")],
+        [
+            row
+            for row in ranked_rows
+            if str(row["ReviewDisposition"]) in {"watch", "defer"}
+            or (
+                str(row["ReviewDisposition"]) == "review_required"
+                and str(row["Symbol"]) not in promote_or_review_buy
+                and str(row["Symbol"]) not in promote_or_review_sell
+            )
+        ],
         key=lambda row: int(row["Confidence"]),
         reverse=True,
     )[:8]
@@ -821,64 +846,17 @@ def _render_ensemble_summary(payload: dict) -> None:
     st.caption("Use Decisions for actions. This is just system summary.")
 
 
-def _render_symbol_stack(symbol_payload: dict, symbol_news_payload: dict, range_payload: dict, ensemble_payload: dict) -> None:
-    symbol_rows = symbol_payload.get("rows", []) if isinstance(symbol_payload.get("rows"), list) else []
-    news_rows = {
-        str(row.get("scope_id", "")): row
-        for row in (symbol_news_payload.get("rows", []) if isinstance(symbol_news_payload.get("rows"), list) else [])
-        if isinstance(row, dict)
-    }
-    range_rows = {
-        str(row.get("scope_id", "")): row
-        for row in (range_payload.get("rows", []) if isinstance(range_payload.get("rows"), list) else [])
-        if isinstance(row, dict)
-    }
-    ensemble_rows = {
-        str(row.get("scope_id", "")): row
-        for row in (ensemble_payload.get("rows", []) if isinstance(ensemble_payload.get("rows"), list) else [])
-        if isinstance(row, dict)
-    }
-    top_symbols = sorted(
-        symbol_rows,
-        key=lambda row: (
-            _action_priority(
-                _best_decision(
-                    (ensemble_rows.get(str(row.get("scope_id", "")), {}) or {}).get("horizon_summary", {})
-                    if isinstance((ensemble_rows.get(str(row.get("scope_id", "")), {}) or {}).get("horizon_summary", {}), dict)
-                    else {}
-                )[0]
-            ),
-            str(((ensemble_rows.get(str(row.get("scope_id", "")), {}) or {}).get("horizon_summary", {}) or {}).get("2to6w", {}).get("state", "")) == "actionable",
-            str(((ensemble_rows.get(str(row.get("scope_id", "")), {}) or {}).get("horizon_summary", {}) or {}).get("1to2w", {}).get("state", "")) == "actionable",
-            str(((ensemble_rows.get(str(row.get("scope_id", "")), {}) or {}).get("horizon_summary", {}) or {}).get("1to3d", {}).get("state", "")) == "actionable",
-            str(((ensemble_rows.get(str(row.get("scope_id", "")), {}) or {}).get("horizon_summary", {}) or {}).get("2to6w", {}).get("state", "")) == "research_only",
-            str(((ensemble_rows.get(str(row.get("scope_id", "")), {}) or {}).get("horizon_summary", {}) or {}).get("1to2w", {}).get("state", "")) == "research_only",
-            abs(float((ensemble_rows.get(str(row.get("scope_id", "")), {}) or {}).get("score_normalized", 0.0) or 0.0)),
-            int((ensemble_rows.get(str(row.get("scope_id", "")), {}) or {}).get("confidence_score", 0) or 0),
-            abs(float(row.get("score_normalized", 0.0) or 0.0)),
-        ),
-        reverse=True,
-    )[:12]
+def _render_symbol_stack(review_payload: dict) -> None:
+    top_symbols = _decision_rows(review_payload)[:12]
     table_rows = []
     for row in top_symbols:
-        symbol = str(row.get("scope_id", ""))
-        ensemble_row = ensemble_rows.get(symbol, {})
-        range_row = range_rows.get(symbol, {})
-        lane_id = str(ensemble_row.get("lane_primary", ""))
-        lane_diag = (
-            range_row.get("lane_diagnostics", {}).get(lane_id, {})
-            if isinstance(range_row.get("lane_diagnostics"), dict)
-            else {}
-        )
-        horizon_summary = ensemble_row.get("horizon_summary", {}) if isinstance(ensemble_row.get("horizon_summary"), dict) else {}
-        best_action, best_horizon = _best_decision(horizon_summary)
         table_rows.append(
             {
-                "Symbol": symbol,
-                "Action": best_action,
-                "Horizon": best_horizon,
-                "Confidence": ensemble_row.get("confidence_score", "UNSET") if ensemble_row else "UNSET",
-                "Why": _humanize_reason(str(((horizon_summary.get(best_horizon, {}) or {}).get("why_code", [])[:1] or [""])[0])),
+                "Symbol": row["Symbol"],
+                "Action": row["Action"],
+                "Horizon": row["Horizon"],
+                "Confidence": row["Confidence"],
+                "Why": row["Reason"],
             }
         )
     st.dataframe(table_rows, use_container_width=True, hide_index=True)
@@ -939,6 +917,8 @@ def main() -> None:
     sector_news_payload, _ = _load_latest_run_artifact("sector_news_v1.json")
     range_payload, _ = _load_latest_run_artifact("range_expectation_v1.json")
     ensemble_payload, _ = _load_latest_run_artifact("ensemble_v1.json")
+    recommendation_payload, _ = _load_latest_run_artifact("recommendation_v1.json")
+    review_payload, _ = _load_latest_run_artifact("recommendation_review_v1.json")
 
     state, reasons, warnings = _compute_system_state(
         freshness_snapshot=freshness_snapshot,
@@ -949,6 +929,8 @@ def main() -> None:
         sector_news_payload=sector_news_payload,
         range_payload=range_payload,
         ensemble_payload=ensemble_payload,
+        recommendation_payload=recommendation_payload,
+        review_payload=review_payload,
     )
 
     st.title("tradly")
@@ -1003,9 +985,9 @@ def main() -> None:
     if section == "Decisions":
         if state == "blocked":
             st.warning("System blocked. Do not act until blockers are cleared.")
-        _render_action_board(ensemble_payload)
+        _render_action_board(review_payload if review_payload else recommendation_payload)
         if show_more_symbols:
-            _render_symbol_stack(symbol_payload, symbol_news_payload, range_payload, ensemble_payload)
+            _render_symbol_stack(review_payload if review_payload else recommendation_payload)
     elif section == "Market":
         _render_market_context_compact(market_payload)
         _render_horizon_landscape(ensemble_payload, state)

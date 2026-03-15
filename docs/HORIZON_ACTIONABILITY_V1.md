@@ -23,7 +23,7 @@ That means the system can honestly say:
 
 1. `1to3d`: research only
 2. `1to2w`: actionable
-3. `2to6w`: not yet supported
+3. `2to6w`: selectively actionable
 
 without forcing one sweeping label to stand in for all timeframes.
 
@@ -157,14 +157,18 @@ To be `research_only`, common reasons include:
 
 ### `2to6w`
 
-Phase 1 actionability:
+To be `actionable`, common requirements include:
 
-1. `not_supported`
+1. sufficient directional support from the `position_term` stack
+2. no major freshness/alignment break
+3. no dominant unresolved conflict across components
+4. no major ensemble quality failure for this horizon
 
-Reason:
+To be `research_only`, common reasons include:
 
-1. the current directional stack is not yet explicitly lane-complete at `2to6w`
-2. `range_expectation_v1` alone is not enough to make this a true operator lane
+1. still-thin ensemble support
+2. sparse symbol-news coverage if news remains an active ensemble input
+3. unresolved cross-model conflicts
 
 ## Dashboard Contract
 
@@ -180,7 +184,7 @@ Suggested interpretation pattern:
 1. `Global: usable`
 2. `1to3d: research_only`
 3. `1to2w: actionable`
-4. `2to6w: not_supported`
+4. `2to6w: actionable` or `research_only`
 
 Rules:
 

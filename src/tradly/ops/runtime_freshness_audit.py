@@ -67,6 +67,25 @@ def _market_date_from_db_ts(ts: datetime) -> date:
     return from_db_utc(ts).astimezone(MARKET_TZ).date()
 
 
+def _check_status_map(checks: list[FreshnessCheck]) -> dict[str, str]:
+    return {check.name: check.status for check in checks}
+
+
+def _medium_horizon_thesis_usable(
+    *,
+    market_bar_status: str,
+    checks: list[FreshnessCheck],
+    pending_uninterpreted_24h: int,
+) -> bool:
+    statuses = _check_status_map(checks)
+    return (
+        market_bar_status == "current_for_calendar"
+        and statuses.get("news_pull_recency") == "PASS"
+        and statuses.get("news_interpretation_recency") == "PASS"
+        and pending_uninterpreted_24h == 0
+    )
+
+
 def main() -> int:
     repo_root = get_repo_root()
     _load_dotenv(repo_root / ".env")
@@ -260,6 +279,11 @@ def main() -> int:
         )
 
     failed = [c for c in checks if c.status != "PASS"]
+    medium_horizon_thesis_usable = _medium_horizon_thesis_usable(
+        market_bar_status=market_bar_status,
+        checks=checks,
+        pending_uninterpreted_24h=pending_uninterpreted_24h,
+    )
     payload = {
         "audit_name": "runtime_freshness_audit_v1",
         "as_of_utc": now_utc.isoformat(),
@@ -287,7 +311,7 @@ def main() -> int:
             "last_cash_session_date": calendar_row.last_cash_session_date.isoformat(),
             "next_cash_session_date": calendar_row.next_cash_session_date.isoformat(),
             "short_horizon_execution_ready": market_session in {"pre_market", "market_hours", "after_hours"},
-            "medium_horizon_thesis_usable": True,
+            "medium_horizon_thesis_usable": medium_horizon_thesis_usable,
         },
         "checks": [asdict(c) for c in checks],
     }

@@ -82,13 +82,13 @@ That means each row should expose a horizon-level view keyed by:
 2. `1to2w`
 3. `2to6w`
 
-Recommended phase-1 shape:
+Recommended shape:
 
 ```json
 {
   "horizon_summary": {
     "1to3d": {
-      "state": "actionable|research_only|blocked|not_supported",
+      "state": "actionable|research_only|blocked",
       "signal_direction": "bullish|bearish|neutral",
       "signal_strength": 0.0,
       "confidence_score": 0,
@@ -99,7 +99,7 @@ Recommended phase-1 shape:
       "data_freshness_ok": true
     },
     "1to2w": {
-      "state": "actionable|research_only|blocked|not_supported",
+      "state": "actionable|research_only|blocked",
       "signal_direction": "bullish|bearish|neutral",
       "signal_strength": 0.0,
       "confidence_score": 0,
@@ -110,14 +110,14 @@ Recommended phase-1 shape:
       "data_freshness_ok": true
     },
     "2to6w": {
-      "state": "not_supported",
-      "signal_direction": "neutral",
+      "state": "actionable|research_only|blocked",
+      "signal_direction": "bullish|bearish|neutral",
       "signal_strength": 0.0,
       "confidence_score": 0,
-      "confidence_label": "low",
-      "coverage_state": "insufficient_evidence",
+      "confidence_label": "low|medium|high",
+      "coverage_state": "sufficient_evidence|thin_evidence|insufficient_evidence",
       "score_normalized": 0.0,
-      "why_code": ["position_horizon_not_supported_phase1"],
+      "why_code": ["..."],
       "data_freshness_ok": false
     }
   }
@@ -127,9 +127,9 @@ Recommended phase-1 shape:
 Rules:
 
 1. `horizon_summary` is operator-facing and should use explicit horizon labels, not internal lane ids
-2. phase-1 `1to3d` should map from the ensemble `near_term` lane
-3. phase-1 `1to2w` should map from the ensemble `swing_term` lane
-4. phase-1 `2to6w` should be explicit `not_supported`, not silently absent
+2. `1to3d` should map from the ensemble `near_term` lane
+3. `1to2w` should map from the ensemble `swing_term` lane
+4. `2to6w` should map from the ensemble `position_term` lane
 5. existing `lane_diagnostics` may remain for debugging, but `horizon_summary` should become the dashboard contract
 
 ## Horizon State Rules
@@ -166,14 +166,17 @@ Use the `swing_term` lane and map:
 
 ### `2to6w`
 
-Phase 1 state:
+Use the `position_term` lane and map:
 
-1. always `not_supported`
-
-Reason:
-
-1. the directional ensemble does not yet operate as a true `2to6w` lane
-2. `range_expectation_v1` alone is not sufficient to promote this horizon into operator actionability
+1. `blocked`
+   - required lane data missing
+   - or lane freshness/alignment contract broken
+2. `research_only`
+   - lane `coverage_state != sufficient_evidence`
+   - or lane carries material unresolved thinness or conflict
+3. `actionable`
+   - lane `coverage_state = sufficient_evidence`
+   - and no major lane blocker is present
 
 ## LLM Relationship
 

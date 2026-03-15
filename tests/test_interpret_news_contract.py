@@ -111,6 +111,52 @@ class InterpretNewsContractTests(unittest.TestCase):
         ok, reason = _validate_record(row)
         self.assertTrue(ok, reason)
 
+    def test_placeholder_scope_remains_invalid_even_with_many_symbols(self) -> None:
+        row = _normalize_record(
+            {
+                "provider": "marketaux",
+                "provider_news_id": "alias3",
+                "bucket": "symbol",
+                "impact_scope": "unclear",
+                "impact_direction": "mixed",
+                "impact_horizon": "1to2w",
+                "relevance_symbols": ["NFLX", "DIS", "NIO"],
+                "thesis_tags": ["relative_value"],
+                "market_impact_note": "The article compares several named symbols and no single scope clearly dominates.",
+                "confidence_label": "medium",
+                "based_on_provided_evidence": True,
+                "calculation_performed": False,
+            }
+        )
+
+        self.assertEqual(row["impact_scope"], "")
+        ok, reason = _validate_record(row)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "impact_scope_invalid")
+
+    def test_placeholder_scope_remains_invalid_without_symbol_context(self) -> None:
+        row = _normalize_record(
+            {
+                "provider": "marketaux",
+                "provider_news_id": "alias4",
+                "bucket": "macro",
+                "impact_scope": "unknown",
+                "impact_direction": "risk_off",
+                "impact_horizon": "1to3d",
+                "relevance_symbols": [],
+                "thesis_tags": ["oil", "inflation"],
+                "market_impact_note": "Macro context points to broader market pressure into the next session.",
+                "confidence_label": "medium",
+                "based_on_provided_evidence": True,
+                "calculation_performed": False,
+            }
+        )
+
+        self.assertEqual(row["impact_scope"], "")
+        ok, reason = _validate_record(row)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "impact_scope_invalid")
+
 
 if __name__ == "__main__":
     unittest.main()

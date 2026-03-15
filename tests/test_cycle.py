@@ -12,6 +12,11 @@ class CycleStepOrderTests(unittest.TestCase):
         self.assertIn("refresh_market_calendar_context", step_names)
         self.assertIn("interpret_news_llm", step_names)
         self.assertIn("run_market_regime", step_names)
+        self.assertIn("run_recommendation", step_names)
+        self.assertIn("run_recommendation_scorecard", step_names)
+        self.assertIn("run_recommendation_scorecard_history", step_names)
+        self.assertIn("run_recommendation_review", step_names)
+        self.assertIn("run_ensemble", step_names)
 
         self.assertLess(
             step_names.index("interpret_news_llm"),
@@ -21,6 +26,23 @@ class CycleStepOrderTests(unittest.TestCase):
             step_names.index("refresh_market_calendar_context"),
             step_names.index("run_market_regime"),
         )
+        self.assertLess(
+            step_names.index("run_ensemble"),
+            step_names.index("run_recommendation"),
+        )
+        self.assertLess(
+            step_names.index("run_recommendation"),
+            step_names.index("run_recommendation_scorecard"),
+        )
+        self.assertLess(
+            step_names.index("run_recommendation_scorecard"),
+            step_names.index("run_recommendation_scorecard_history"),
+        )
+        self.assertLess(
+            step_names.index("run_recommendation_scorecard_history"),
+            step_names.index("run_recommendation_review"),
+        )
+
 
 
 if __name__ == "__main__":

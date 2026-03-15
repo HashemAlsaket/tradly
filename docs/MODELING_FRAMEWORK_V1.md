@@ -261,7 +261,7 @@ Suggested registry shape:
   "model_id": "sector_news_v1",
   "scope": "sector",
   "required_inputs": ["news_interpretations", "news_events", "news_symbols"],
-  "supported_horizons": ["1to3d", "1to2w"],
+  "supported_horizons": ["intraday", "1to3d", "1to2w", "2to6w"],
   "output_schema_version": 1,
   "directional_role": "directional",
   "ensemble_inclusion": true,

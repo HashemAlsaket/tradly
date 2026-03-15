@@ -21,6 +21,10 @@ STEPS = [
     ("run_sector_news", "tradly.pipeline.run_sector_news"),
     ("run_range_expectation", "tradly.pipeline.run_range_expectation"),
     ("run_ensemble", "tradly.pipeline.run_ensemble"),
+    ("run_recommendation", "tradly.pipeline.run_recommendation"),
+    ("run_recommendation_scorecard", "tradly.pipeline.run_recommendation_scorecard"),
+    ("run_recommendation_scorecard_history", "tradly.pipeline.run_recommendation_scorecard_history"),
+    ("run_recommendation_review", "tradly.pipeline.run_recommendation_review"),
 ]
 
 
