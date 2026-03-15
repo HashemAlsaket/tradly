@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tradly.pipeline.run_model import main
+from tradly.ops.refresh_registry_runtime import main
 
 
 if __name__ == "__main__":

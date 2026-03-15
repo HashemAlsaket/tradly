@@ -1,0 +1,49 @@
+symbol,asset_type,sector,industry,halal_flag,active
+SPY,etf,ETF,Broad Market ETF,investable,true
+QQQ,etf,ETF,Large Cap Growth ETF,investable,true
+DIA,etf,ETF,Large Cap ETF,investable,true
+IWM,etf,ETF,Small Cap ETF,investable,true
+VTI,etf,ETF,Total Market ETF,investable,true
+AAPL,stock,Technology,Consumer Electronics,investable,true
+MSFT,stock,Technology,Software - Infrastructure,investable,true
+NVDA,stock,Technology,Semiconductors,investable,true
+AVGO,stock,Technology,Semiconductors,investable,true
+AMD,stock,Technology,Semiconductors,investable,true
+MU,stock,Technology,Semiconductors,investable,true
+SNDK,stock,Technology,Semiconductors,investable,true
+NVTS,stock,Technology,Semiconductors,investable,true
+GOOGL,stock,Communication Services,Internet Content & Information,investable,true
+AMZN,stock,Consumer Cyclical,Internet Retail,investable,true
+META,stock,Communication Services,Internet Content & Information,review_required,true
+TSLA,stock,Consumer Cyclical,Auto Manufacturers,review_required,true
+NFLX,stock,Communication Services,Entertainment,investable,true
+ORCL,stock,Technology,Software - Infrastructure,investable,true
+ADBE,stock,Technology,Software - Application,investable,true
+CRM,stock,Technology,Software - Application,investable,true
+INTC,stock,Technology,Semiconductors,investable,true
+CSCO,stock,Technology,Communication Equipment,investable,true
+JPM,stock,Financial Services,Banks - Diversified,probably_not_halal,true
+BAC,stock,Financial Services,Banks - Diversified,probably_not_halal,true
+GS,stock,Financial Services,Capital Markets,probably_not_halal,true
+MS,stock,Financial Services,Capital Markets,probably_not_halal,true
+BLK,stock,Financial Services,Asset Management,review_required,true
+V,stock,Financial Services,Credit Services,review_required,true
+MA,stock,Financial Services,Credit Services,review_required,true
+XOM,stock,Energy,Oil & Gas Integrated,investable,true
+CVX,stock,Energy,Oil & Gas Integrated,investable,true
+LLY,stock,Healthcare,Drug Manufacturers - General,investable,true
+UNH,stock,Healthcare,Healthcare Plans,review_required,true
+PFE,stock,Healthcare,Drug Manufacturers - General,investable,true
+KO,stock,Consumer Defensive,Beverages - Non-Alcoholic,investable,true
+PEP,stock,Consumer Defensive,Beverages - Non-Alcoholic,investable,true
+WMT,stock,Consumer Defensive,Discount Stores,investable,true
+COST,stock,Consumer Defensive,Discount Stores,investable,true
+MCD,stock,Consumer Cyclical,Restaurants,investable,true
+NKE,stock,Consumer Cyclical,Footwear & Accessories,investable,true
+DIS,stock,Communication Services,Entertainment,investable,true
+PLTR,stock,Technology,Software - Infrastructure,investable,true
+COIN,stock,Financial Services,Capital Markets,probably_not_halal,true
+VIXY,etf,Macro,Volatility ETF (VIX Proxy),review_required,false
+TLT,etf,Macro,Treasury Bond ETF,review_required,false
+IEF,etf,Macro,Treasury Bond ETF,review_required,false
+SHY,etf,Macro,Treasury Bond ETF,review_required,false

@@ -3,7 +3,9 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 
+from tradly.ops.freshness_snapshot import run_and_write_runtime_freshness_snapshot
 from tradly.paths import get_repo_root
 
 
@@ -11,13 +13,19 @@ STEPS = [
     ("ingest_market_bars", "tradly.pipeline.ingest_market_bars"),
     ("ingest_news_budgeted", "tradly.pipeline.ingest_news_budgeted"),
     ("interpret_news_llm", "tradly.pipeline.interpret_news_llm"),
-    ("run_model", "tradly.pipeline.run_model"),
-    ("review_actions_llm", "tradly.pipeline.review_actions_llm"),
+    ("run_market_regime", "tradly.pipeline.run_market_regime"),
+    ("run_sector_movement", "tradly.pipeline.run_sector_movement"),
+    ("run_symbol_movement", "tradly.pipeline.run_symbol_movement"),
+    ("run_symbol_news", "tradly.pipeline.run_symbol_news"),
+    ("run_sector_news", "tradly.pipeline.run_sector_news"),
+    ("run_range_expectation", "tradly.pipeline.run_range_expectation"),
+    ("run_ensemble", "tradly.pipeline.run_ensemble"),
 ]
 
 
 def main() -> int:
     repo_root = get_repo_root()
+    cycle_started_at_utc = datetime.now(timezone.utc)
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = "src" if not existing_pythonpath else f"src:{existing_pythonpath}"
@@ -31,6 +39,23 @@ def main() -> int:
             return result.returncode
         print(f"step_ok={step_name}")
 
+    cycle_ended_at_utc = datetime.now(timezone.utc)
+    freshness_rc, freshness_out, freshness_err, _ = run_and_write_runtime_freshness_snapshot(
+        env,
+        repo_root=repo_root,
+        cycle_started_at_utc=cycle_started_at_utc,
+        cycle_ended_at_utc=cycle_ended_at_utc,
+        cycle_status="PASS",
+    )
+    if freshness_out:
+        print(freshness_out)
+    if freshness_err:
+        print(freshness_err, file=sys.stderr)
+    if freshness_rc != 0:
+        print(f"step_failed=runtime_freshness_snapshot exit_code={freshness_rc}")
+        return freshness_rc
+
+    print("step_ok=runtime_freshness_snapshot")
     print("cycle_status=ok")
     return 0
 

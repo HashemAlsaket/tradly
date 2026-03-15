@@ -26,6 +26,19 @@ class SourceLag:
 MARKET_TZ = ZoneInfo("America/New_York")
 
 
+def _classify_macro_age_days(
+    *,
+    age_days: int,
+    warn_after_days: int,
+    block_after_days: int,
+) -> str:
+    if age_days > block_after_days:
+        return "stale"
+    if age_days > warn_after_days:
+        return "warning"
+    return "fresh"
+
+
 def _load_dotenv(path) -> None:
     if not path.exists():
         return
@@ -75,7 +88,8 @@ def main() -> int:
     now_local = time_ctx.now_local
     expected_min_market_date = previous_trading_day(now_utc.astimezone(MARKET_TZ).date())
     news_pull_max_age_sec = int(os.getenv("TRADLY_PREFLIGHT_NEWS_PULL_MAX_AGE_SEC", "3600"))
-    macro_max_age_days = int(os.getenv("TRADLY_PREFLIGHT_MACRO_MAX_AGE_DAYS", "2"))
+    macro_warn_age_days = int(os.getenv("TRADLY_PREFLIGHT_MACRO_WARN_AGE_DAYS", "2"))
+    macro_block_age_days = int(os.getenv("TRADLY_PREFLIGHT_MACRO_BLOCK_AGE_DAYS", "5"))
     interp_lookback_days = int(os.getenv("TRADLY_PREFLIGHT_INTERPRET_LOOKBACK_DAYS", "7"))
 
     conn = duckdb.connect(str(db_path), read_only=True)
@@ -167,20 +181,28 @@ def main() -> int:
         )
     )
 
-    macro_stale = True
+    macro_needs_refresh = True
     if latest_macro is not None:
         latest_macro = from_db_utc(latest_macro)
         macro_age_days = int((now_utc.date() - latest_macro.date()).days)
-        macro_stale = macro_age_days > macro_max_age_days
-        macro_backfill_from = (
-            (latest_macro.date() - timedelta(days=3)).isoformat() if macro_stale else None
+        macro_status = _classify_macro_age_days(
+            age_days=macro_age_days,
+            warn_after_days=macro_warn_age_days,
+            block_after_days=macro_block_age_days,
         )
-        macro_backfill_to = now_utc.date().isoformat() if macro_stale else None
+        macro_needs_refresh = macro_status != "fresh"
+        macro_backfill_from = (
+            (latest_macro.date() - timedelta(days=3)).isoformat() if macro_needs_refresh else None
+        )
+        macro_backfill_to = now_utc.date().isoformat() if macro_needs_refresh else None
         lags.append(
             SourceLag(
                 source="macro_points",
-                status="stale" if macro_stale else "fresh",
-                detail=f"latest_date={latest_macro.date()} age_days={macro_age_days} max_age_days={macro_max_age_days}",
+                status=macro_status,
+                detail=(
+                    f"latest_date={latest_macro.date()} age_days={macro_age_days} "
+                    f"warn_age_days={macro_warn_age_days} block_age_days={macro_block_age_days}"
+                ),
                 backfill_from=macro_backfill_from,
                 backfill_to=macro_backfill_to,
             )
@@ -271,7 +293,7 @@ def main() -> int:
             )
             return 1
 
-    if macro_stale:
+    if macro_needs_refresh:
         actions.append("seed_macro_fred")
         macro_lag = next((lag for lag in lags if lag.source == "macro_points"), None)
         env_macro = dict(env)
@@ -364,14 +386,18 @@ def main() -> int:
     else:
         final_latest_macro = from_db_utc(final_latest_macro)
         final_macro_age_days = int((now_utc.date() - final_latest_macro.date()).days)
-        final_macro_stale = final_macro_age_days > macro_max_age_days
+        final_macro_status = _classify_macro_age_days(
+            age_days=final_macro_age_days,
+            warn_after_days=macro_warn_age_days,
+            block_after_days=macro_block_age_days,
+        )
         final_lags.append(
             SourceLag(
                 source="macro_points",
-                status="stale" if final_macro_stale else "fresh",
+                status=final_macro_status,
                 detail=(
                     f"latest_date={final_latest_macro.date()} age_days={final_macro_age_days} "
-                    f"max_age_days={macro_max_age_days}"
+                    f"warn_age_days={macro_warn_age_days} block_age_days={macro_block_age_days}"
                 ),
             )
         )

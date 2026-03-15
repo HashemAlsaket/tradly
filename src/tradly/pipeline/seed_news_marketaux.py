@@ -105,6 +105,7 @@ def _apply_env_overrides(
     lookback_override = os.getenv("NEWS_SEED_LOOKBACK_DAYS", "").strip()
     pages_override = os.getenv("NEWS_SEED_MAX_PAGES_PER_BUCKET", "").strip()
     bucket_filter_raw = os.getenv("NEWS_SEED_BUCKETS", "").strip()
+    symbol_filter_raw = os.getenv("NEWS_SEED_SYMBOLS", "").strip()
     request_cap_raw = os.getenv("NEWS_SEED_REQUEST_CAP", "").strip()
 
     if lookback_override:
@@ -113,7 +114,10 @@ def _apply_env_overrides(
         max_pages_per_bucket = int(pages_override)
 
     filtered_buckets = buckets
-    if bucket_filter_raw:
+    if symbol_filter_raw:
+        selected_symbols = [item.strip().upper() for item in symbol_filter_raw.split(",") if item.strip()]
+        filtered_buckets = {"targeted_symbols": selected_symbols}
+    elif bucket_filter_raw:
         selected = [item.strip() for item in bucket_filter_raw.split(",") if item.strip()]
         filtered_buckets = {name: symbols for name, symbols in buckets.items() if name in selected}
 

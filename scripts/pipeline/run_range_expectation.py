@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tradly.pipeline.review_actions_llm import main
+from tradly.pipeline.run_range_expectation import main
 
 
 if __name__ == "__main__":

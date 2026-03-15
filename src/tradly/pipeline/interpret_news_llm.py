@@ -12,7 +12,7 @@ from tradly.services.db_time import to_db_utc
 from tradly.services.time_context import get_time_context
 
 
-PROMPT_VERSION = "news_interpreter_v0"
+PROMPT_VERSION = "news_interpreter_v1"
 BATCH_SIZE = 12
 DEFAULT_LOOKBACK_DAYS = 3
 DEFAULT_PENDING_LIMIT = 240
@@ -20,10 +20,50 @@ DEFAULT_MAX_ROUNDS = 4
 DEFAULT_BATCH_RETRIES = 2
 
 ALLOWED_BUCKET = {"macro", "sector", "symbol", "asia", "ignore"}
-ALLOWED_SCOPE = {"macro", "rates", "energy", "semis", "usd", "risk_sentiment", "multiple"}
-ALLOWED_DIRECTION = {"risk_on", "risk_off", "bullish_semis", "bearish_semis", "mixed", "unclear"}
-ALLOWED_HORIZON = {"intraday", "1to3d", "1to2w"}
+ALLOWED_SCOPE = {
+    "macro",
+    "broad_market",
+    "rates",
+    "energy",
+    "semis",
+    "usd",
+    "risk_sentiment",
+    "technology",
+    "healthcare",
+    "financial_services",
+    "industrials",
+    "consumer_defensive",
+    "communication_services",
+    "consumer_cyclical",
+    "basic_materials",
+    "real_estate",
+    "utilities",
+    "symbol_specific",
+    "multiple",
+}
+ALLOWED_DIRECTION = {"bullish", "bearish", "neutral", "mixed", "unclear", "risk_on", "risk_off"}
+ALLOWED_HORIZON = {"intraday", "1to3d", "1to2w", "2to6w"}
 ALLOWED_CONFIDENCE = {"low", "medium", "high"}
+SCOPE_ALIASES = {
+    "market": "broad_market",
+    "broad market": "broad_market",
+    "broad_market": "broad_market",
+    "risk sentiment": "risk_sentiment",
+    "risk-sentiment": "risk_sentiment",
+    "financials": "financial_services",
+    "financial services": "financial_services",
+    "communication services": "communication_services",
+    "communications": "communication_services",
+    "consumer defensive": "consumer_defensive",
+    "consumer staples": "consumer_defensive",
+    "consumer cyclical": "consumer_cyclical",
+    "consumer discretionary": "consumer_cyclical",
+    "basic materials": "basic_materials",
+    "materials": "basic_materials",
+    "real estate": "real_estate",
+    "symbol-specific": "symbol_specific",
+    "symbol specific": "symbol_specific",
+}
 
 
 def _load_dotenv(path: Path) -> None:
@@ -52,9 +92,9 @@ def _call_openai(model: str, api_key: str, batch_articles: list[dict]) -> dict:
         '  "provider": "marketaux",\n'
         '  "provider_news_id": "id",\n'
         '  "bucket": "macro|sector|symbol|asia|ignore",\n'
-        '  "impact_scope": "macro|rates|energy|semis|usd|risk_sentiment|multiple",\n'
-        '  "impact_direction": "risk_on|risk_off|bullish_semis|bearish_semis|mixed|unclear",\n'
-        '  "impact_horizon": "intraday|1to3d|1to2w",\n'
+        '  "impact_scope": "macro|broad_market|rates|energy|semis|usd|risk_sentiment|technology|healthcare|financial_services|industrials|consumer_defensive|communication_services|consumer_cyclical|basic_materials|real_estate|utilities|symbol_specific|multiple",\n'
+        '  "impact_direction": "bullish|bearish|neutral|mixed|unclear|risk_on|risk_off",\n'
+        '  "impact_horizon": "intraday|1to3d|1to2w|2to6w",\n'
         '  "relevance_symbols": ["MU"],\n'
         '  "thesis_tags": ["rates"],\n'
         '  "market_impact_note": "short plain English note",\n'
@@ -62,6 +102,20 @@ def _call_openai(model: str, api_key: str, batch_articles: list[dict]) -> dict:
         '  "based_on_provided_evidence": true,\n'
         '  "calculation_performed": false\n'
         "}\n"
+        "Interpretation rules:\n"
+        "1. Use `symbol_specific` when the article is primarily about one or more named symbols.\n"
+        "2. Use a canonical sector scope when the impact is mainly sector-level.\n"
+        "   Canonical sector ids only: `technology`, `healthcare`, `financial_services`, `industrials`,\n"
+        "   `consumer_defensive`, `communication_services`, `consumer_cyclical`, `basic_materials`,\n"
+        "   `real_estate`, `utilities`, `energy`.\n"
+        "   Do not output human-friendly aliases like `financials`, `consumer discretionary`,\n"
+        "   `consumer staples`, `materials`, `communication services`, or `real estate`.\n"
+        "3. Use exact scope ids from the allowed list only. Prefer underscores, not spaces.\n"
+        "   Examples: `broad_market`, `risk_sentiment`, `symbol_specific`, `financial_services`.\n"
+        "4. Use `multiple` only when the article clearly affects several distinct scopes and no single scope dominates.\n"
+        "5. Use `bullish` or `bearish` for direct directional pressure on a sector or symbol.\n"
+        "6. Use `risk_on` or `risk_off` for broader market tone or cross-asset posture.\n"
+        "7. Use `2to6w` when the article's impact is more durable than a normal swing horizon.\n"
         'Return as: {"interpretations":[...]}.\n'
         f"Articles:\n{json.dumps(batch_articles, ensure_ascii=True)}"
     )
@@ -132,6 +186,25 @@ def _validate_record(row: dict) -> tuple[bool, str]:
     if not isinstance(row.get("thesis_tags"), list):
         return False, "thesis_tags_invalid"
     return True, ""
+
+
+def _normalize_impact_scope(value: object) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    normalized = raw.replace("/", " ").replace("-", " ").replace("_", " ")
+    normalized = " ".join(normalized.split())
+    alias_hit = SCOPE_ALIASES.get(normalized)
+    if alias_hit:
+        return alias_hit
+    candidate = normalized.replace(" ", "_")
+    return candidate
+
+
+def _normalize_record(row: dict) -> dict:
+    normalized = dict(row)
+    normalized["impact_scope"] = _normalize_impact_scope(row.get("impact_scope"))
+    return normalized
 
 
 def _ensure_tables(conn) -> None:
@@ -318,6 +391,7 @@ def main() -> int:
 
                 valid_by_key: dict[tuple[str, str], dict] = {}
                 for item in interpretations:
+                    item = _normalize_record(item) if isinstance(item, dict) else item
                     ok, reason = _validate_record(item)
                     if not ok:
                         invalid_reason_counts[reason] = invalid_reason_counts.get(reason, 0) + 1

@@ -1,0 +1,1862 @@
+{
+  "version": 1,
+  "symbols": [
+    {
+      "symbol": "AAPL",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Technology",
+      "industry": "Consumer Electronics",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "ABBV",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": false,
+      "sector": "Healthcare",
+      "industry": "Drug Manufacturers - General",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "ADBE",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Technology",
+      "industry": "Software - Application",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "ADI",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "semis"
+      ],
+      "news_buckets": [
+        "asia_semis"
+      ]
+    },
+    {
+      "symbol": "AEP",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": false,
+      "sector": "Utilities",
+      "industry": "Utilities - Regulated Electric",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "AMAT",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "semis"
+      ],
+      "news_buckets": [
+        "asia_semis",
+        "core_semis"
+      ]
+    },
+    {
+      "symbol": "AMD",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader",
+        "semis"
+      ],
+      "news_buckets": [
+        "core_semis"
+      ]
+    },
+    {
+      "symbol": "AMT",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": false,
+      "sector": "Real Estate",
+      "industry": "REIT - Specialty",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "AMZN",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Consumer Cyclical",
+      "industry": "Internet Retail",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "APD",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": false,
+      "sector": "Basic Materials",
+      "industry": "Specialty Chemicals",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "ARKK",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Innovation ETF",
+      "halal_flag": "review_required",
+      "roles": [
+        "macro_context"
+      ],
+      "news_buckets": [
+        "us_macro"
+      ]
+    },
+    {
+      "symbol": "ARM",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "semis"
+      ],
+      "news_buckets": [
+        "asia_semis"
+      ]
+    },
+    {
+      "symbol": "ASML",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "semis"
+      ],
+      "news_buckets": [
+        "asia_semis",
+        "core_semis",
+        "event_reserve"
+      ]
+    },
+    {
+      "symbol": "AVGO",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader",
+        "semis"
+      ],
+      "news_buckets": [
+        "core_semis"
+      ]
+    },
+    {
+      "symbol": "BAC",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Financial Services",
+      "industry": "Banks - Diversified",
+      "halal_flag": "probably_not_halal",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "BLK",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Financial Services",
+      "industry": "Asset Management",
+      "halal_flag": "review_required",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "CAT",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": false,
+      "sector": "Industrials",
+      "industry": "Farm & Heavy Construction Machinery",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "CHTR",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": false,
+      "sector": "Communication Services",
+      "industry": "Telecom Services",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "CL",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Consumer Defensive",
+      "industry": "Household & Personal Products",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "COIN",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Financial Services",
+      "industry": "Capital Markets",
+      "halal_flag": "probably_not_halal",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "COST",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Consumer Defensive",
+      "industry": "Discount Stores",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "CRM",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Technology",
+      "industry": "Software - Application",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "CSCO",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Technology",
+      "industry": "Communication Equipment",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "CVX",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Energy",
+      "industry": "Oil & Gas Integrated",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "DE",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Industrials",
+      "industry": "Farm & Heavy Construction Machinery",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "DHR",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Healthcare",
+      "industry": "Diagnostics & Research",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "DIA",
+      "asset_type": "etf",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "ETF",
+      "industry": "Large Cap ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "broad_etf",
+        "macro_context"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "DIS",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Communication Services",
+      "industry": "Entertainment",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "DUK",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Utilities",
+      "industry": "Utilities - Regulated Electric",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "EOG",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Energy",
+      "industry": "Oil & Gas E&P",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "EQIX",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Real Estate",
+      "industry": "REIT - Specialty",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "EWJ",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "asia_context"
+      ],
+      "news_buckets": [
+        "asia_macro"
+      ]
+    },
+    {
+      "symbol": "EWT",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "asia_context"
+      ],
+      "news_buckets": [
+        "asia_macro"
+      ]
+    },
+    {
+      "symbol": "EXC",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Utilities",
+      "industry": "Utilities - Diversified",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "FCX",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Basic Materials",
+      "industry": "Copper",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "FXI",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "asia_context"
+      ],
+      "news_buckets": [
+        "asia_macro"
+      ]
+    },
+    {
+      "symbol": "GE",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Industrials",
+      "industry": "Aerospace & Defense",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "GLD",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "macro_context"
+      ],
+      "news_buckets": [
+        "us_macro"
+      ]
+    },
+    {
+      "symbol": "GOOGL",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Communication Services",
+      "industry": "Internet Content & Information",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "GS",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Financial Services",
+      "industry": "Capital Markets",
+      "halal_flag": "probably_not_halal",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "HON",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Industrials",
+      "industry": "Specialty Industrial Machinery",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "I:VIX",
+      "asset_type": "index",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Macro",
+      "industry": "Volatility Index",
+      "halal_flag": "review_required",
+      "roles": [
+        "macro_context"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "IEF",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "Macro",
+      "industry": "Treasury Bond ETF",
+      "halal_flag": "review_required",
+      "roles": [
+        "macro_context"
+      ],
+      "news_buckets": [
+        "us_macro"
+      ]
+    },
+    {
+      "symbol": "INTC",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader",
+        "semis"
+      ],
+      "news_buckets": [
+        "core_semis"
+      ]
+    },
+    {
+      "symbol": "ISRG",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Healthcare",
+      "industry": "Medical Instruments & Supplies",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "IWM",
+      "asset_type": "etf",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "ETF",
+      "industry": "Small Cap ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "broad_etf",
+        "macro_context"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "JNJ",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Healthcare",
+      "industry": "Drug Manufacturers - General",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "JPM",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Financial Services",
+      "industry": "Banks - Diversified",
+      "halal_flag": "probably_not_halal",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "KLAC",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "semis"
+      ],
+      "news_buckets": [
+        "asia_semis",
+        "core_semis"
+      ]
+    },
+    {
+      "symbol": "KO",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Consumer Defensive",
+      "industry": "Beverages - Non-Alcoholic",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "KRE",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Regional Banks ETF",
+      "halal_flag": "probably_not_halal",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "KWEB",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "asia_context"
+      ],
+      "news_buckets": [
+        "asia_macro"
+      ]
+    },
+    {
+      "symbol": "LIN",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Basic Materials",
+      "industry": "Specialty Chemicals",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "LLY",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Healthcare",
+      "industry": "Drug Manufacturers - General",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "LMT",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Industrials",
+      "industry": "Aerospace & Defense",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "LRCX",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "semis"
+      ],
+      "news_buckets": [
+        "asia_semis",
+        "core_semis"
+      ]
+    },
+    {
+      "symbol": "MA",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Financial Services",
+      "industry": "Credit Services",
+      "halal_flag": "review_required",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "MCD",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Consumer Cyclical",
+      "industry": "Restaurants",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "MDLZ",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Consumer Defensive",
+      "industry": "Confectioners",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "META",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Communication Services",
+      "industry": "Internet Content & Information",
+      "halal_flag": "review_required",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "MRK",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Healthcare",
+      "industry": "Drug Manufacturers - General",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "MS",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Financial Services",
+      "industry": "Capital Markets",
+      "halal_flag": "probably_not_halal",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "MSFT",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Technology",
+      "industry": "Software - Infrastructure",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "MU",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "halal_flag": "investable",
+      "roles": [
+        "core",
+        "earnings_focus",
+        "sector_leader",
+        "semis"
+      ],
+      "news_buckets": [
+        "core_semis",
+        "event_reserve"
+      ]
+    },
+    {
+      "symbol": "NEE",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Utilities",
+      "industry": "Utilities - Regulated Electric",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "NEM",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Basic Materials",
+      "industry": "Gold",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "NFLX",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Communication Services",
+      "industry": "Entertainment",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "NKE",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Consumer Cyclical",
+      "industry": "Footwear & Accessories",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "NVDA",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "halal_flag": "investable",
+      "roles": [
+        "core",
+        "earnings_focus",
+        "sector_leader",
+        "semis"
+      ],
+      "news_buckets": [
+        "core_semis",
+        "event_reserve"
+      ]
+    },
+    {
+      "symbol": "NVTS",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "halal_flag": "investable",
+      "roles": [
+        "core",
+        "earnings_focus",
+        "sector_leader",
+        "semis"
+      ],
+      "news_buckets": [
+        "core_semis"
+      ]
+    },
+    {
+      "symbol": "O",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Real Estate",
+      "industry": "REIT - Retail",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "ORCL",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Technology",
+      "industry": "Software - Infrastructure",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "OXY",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Energy",
+      "industry": "Oil & Gas E&P",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "PEP",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Consumer Defensive",
+      "industry": "Beverages - Non-Alcoholic",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "PFE",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Healthcare",
+      "industry": "Drug Manufacturers - General",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "PG",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Consumer Defensive",
+      "industry": "Household & Personal Products",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "PLD",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Real Estate",
+      "industry": "REIT - Industrial",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "PLTR",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Technology",
+      "industry": "Software - Infrastructure",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "QQQ",
+      "asset_type": "etf",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Large Cap Growth ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "broad_etf",
+        "macro_context"
+      ],
+      "news_buckets": [
+        "us_macro"
+      ]
+    },
+    {
+      "symbol": "SHY",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "Macro",
+      "industry": "Treasury Bond ETF",
+      "halal_flag": "review_required",
+      "roles": [
+        "macro_context"
+      ],
+      "news_buckets": [
+        "us_macro"
+      ]
+    },
+    {
+      "symbol": "SLB",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Energy",
+      "industry": "Oil & Gas Equipment & Services",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "SMCI",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Technology",
+      "industry": "Computer Hardware",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "SMH",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "SNDK",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "halal_flag": "investable",
+      "roles": [
+        "core",
+        "earnings_focus",
+        "sector_leader",
+        "semis"
+      ],
+      "news_buckets": [
+        "core_semis"
+      ]
+    },
+    {
+      "symbol": "SO",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Utilities",
+      "industry": "Utilities - Regulated Electric",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "SOXX",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "SPY",
+      "asset_type": "etf",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Broad Market ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "broad_etf",
+        "macro_context"
+      ],
+      "news_buckets": [
+        "us_macro"
+      ]
+    },
+    {
+      "symbol": "SRE",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Utilities",
+      "industry": "Utilities - Diversified",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "SYK",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Healthcare",
+      "industry": "Medical Devices",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "TLT",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "Macro",
+      "industry": "Treasury Bond ETF",
+      "halal_flag": "review_required",
+      "roles": [
+        "macro_context"
+      ],
+      "news_buckets": [
+        "us_macro"
+      ]
+    },
+    {
+      "symbol": "TMO",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Healthcare",
+      "industry": "Diagnostics & Research",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "TMUS",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Communication Services",
+      "industry": "Telecom Services",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "TSLA",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Consumer Cyclical",
+      "industry": "Auto Manufacturers",
+      "halal_flag": "review_required",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "TSM",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "Technology",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "semis"
+      ],
+      "news_buckets": [
+        "asia_semis",
+        "core_semis",
+        "event_reserve"
+      ]
+    },
+    {
+      "symbol": "UNH",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Healthcare",
+      "industry": "Healthcare Plans",
+      "halal_flag": "review_required",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "UNP",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Industrials",
+      "industry": "Railroads",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "UPS",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": false,
+      "sector": "Industrials",
+      "industry": "Integrated Freight & Logistics",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "USO",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "macro_context"
+      ],
+      "news_buckets": [
+        "us_macro"
+      ]
+    },
+    {
+      "symbol": "UUP",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "asia_context",
+        "macro_context"
+      ],
+      "news_buckets": [
+        "asia_macro",
+        "us_macro"
+      ]
+    },
+    {
+      "symbol": "V",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Financial Services",
+      "industry": "Credit Services",
+      "halal_flag": "review_required",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "VIXY",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "Macro",
+      "industry": "Volatility ETF (VIX Proxy)",
+      "halal_flag": "review_required",
+      "roles": [
+        "macro_context"
+      ],
+      "news_buckets": [
+        "us_macro"
+      ]
+    },
+    {
+      "symbol": "VTI",
+      "asset_type": "etf",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "ETF",
+      "industry": "Total Market ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "broad_etf",
+        "macro_context"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "WMT",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Consumer Defensive",
+      "industry": "Discount Stores",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "XLB",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Materials ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "XLC",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Communication Services ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "XLE",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Energy ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "XLF",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Financials ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "XLI",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Industrials ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "XLK",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "XLP",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Consumer Staples ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "XLRE",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Real Estate ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "XLU",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Utilities ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "XLV",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Healthcare ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "XLY",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Consumer Discretionary ETF",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    },
+    {
+      "symbol": "XOM",
+      "asset_type": "stock",
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": false,
+      "sector": "Energy",
+      "industry": "Oil & Gas Integrated",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "XSD",
+      "asset_type": "etf",
+      "active": false,
+      "market_data": false,
+      "model": false,
+      "direct_news": true,
+      "sector": "ETF",
+      "industry": "Context Symbol",
+      "halal_flag": "review_required",
+      "roles": [
+        "sector_context"
+      ],
+      "news_buckets": [
+        "sector_context"
+      ]
+    }
+  ]
+}

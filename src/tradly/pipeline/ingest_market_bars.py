@@ -17,6 +17,7 @@ LOOKBACK_DAYS = 180
 MIN_BARS_PER_SYMBOL = 61
 VALID_PAYLOAD_STATUS = {"OK", "DELAYED"}
 CONTEXT_SYMBOLS = ("SPY", "QQQ", "VIXY", "TLT", "IEF", "SHY")
+SCOPE_MANIFEST_PATH = Path("data/manual/universe_runtime_scopes.json")
 
 
 def _load_dotenv(path: Path) -> None:
@@ -55,6 +56,25 @@ def _fetch_daily_bars(symbol: str, api_key: str, start_date: str, end_date: str)
     return status, rows
 
 
+def _load_market_data_symbols(repo_root: Path) -> list[str]:
+    manifest_path = repo_root / SCOPE_MANIFEST_PATH
+    if not manifest_path.exists():
+        raise RuntimeError(f"market_data_scope_manifest_missing:{manifest_path}")
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError("market_data_scope_manifest_invalid:root_not_object")
+    scopes = payload.get("scopes")
+    if not isinstance(scopes, dict):
+        raise RuntimeError("market_data_scope_manifest_invalid:scopes_not_object")
+    symbols = scopes.get("market_data_symbols")
+    if not isinstance(symbols, list):
+        raise RuntimeError("market_data_scope_manifest_invalid:market_data_symbols_not_list")
+    cleaned = sorted({str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()})
+    if not cleaned:
+        raise RuntimeError("market_data_scope_manifest_invalid:market_data_symbols_empty")
+    return cleaned
+
+
 def main() -> int:
     repo_root = get_repo_root()
     _load_dotenv(repo_root / ".env")
@@ -89,16 +109,23 @@ def main() -> int:
         return 9
     ingested_at = to_db_utc(time_ctx.now_utc)
 
+    try:
+        scoped_symbols = _load_market_data_symbols(repo_root)
+    except RuntimeError as exc:
+        print(f"ingest_market_bars_v0_failed")
+        print(f"error={exc}")
+        return 10
     conn = duckdb.connect(str(db_path))
     try:
+        placeholders = ", ".join("?" for _ in scoped_symbols)
         symbol_rows = conn.execute(
-            """
+            f"""
             SELECT symbol, active
             FROM instruments
-            WHERE active = TRUE OR symbol IN (?, ?, ?, ?, ?, ?)
+            WHERE symbol IN ({placeholders})
             ORDER BY symbol
             """,
-            CONTEXT_SYMBOLS,
+            scoped_symbols,
         ).fetchall()
     finally:
         conn.close()
@@ -108,11 +135,11 @@ def main() -> int:
         return 4
 
     symbols = [row[0] for row in symbol_rows]
-    missing_context = sorted(symbol for symbol in CONTEXT_SYMBOLS if symbol not in set(symbols))
+    missing_context = sorted(symbol for symbol in scoped_symbols if symbol not in set(symbols))
     if missing_context:
         print("ingest_market_bars_v0_failed")
         for symbol in missing_context:
-            print(f"error=context_symbol_missing:{symbol}")
+            print(f"error=market_data_scope_symbol_missing:{symbol}")
         return 5
 
     rows_to_upsert: list[tuple] = []
