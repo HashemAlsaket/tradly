@@ -5,13 +5,18 @@ import os
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from tradly.paths import get_repo_root
 from tradly.pipeline.ingest_market_bars import _load_market_data_symbols
 from tradly.services.db_time import from_db_utc
 from tradly.services.market_calendar import market_session_state, previous_trading_day
+from tradly.services.session_freshness_policy import (
+    freshness_policy_for_session,
+    policy_relaxes_intraday,
+    policy_uses_intraday,
+)
 from tradly.services.time_context import get_time_context
 
 
@@ -24,11 +29,9 @@ class SourceLag:
     backfill_to: str | None = None
 
 
-MARKET_TZ = ZoneInfo("America/New_York")
-PREMARKET_OPEN_ET = time(4, 0)
-AFTER_HOURS_CLOSE_ET = time(20, 0)
 WATERMARK_SOURCE_NAME_1M = "market_bars_1m"
 MACRO_REQUIRED_SERIES = ("DGS2", "DGS10", "DFF", "VIXCLS")
+MARKET_TZ = ZoneInfo("America/New_York")
 
 
 def _load_macro_refresh_state(
@@ -87,22 +90,14 @@ def _market_date_from_db_ts(ts: datetime) -> date:
     return from_db_utc(ts).astimezone(MARKET_TZ).date()
 
 
-def _session_requires_intraday(*, now_utc: datetime, market_session: str) -> bool:
-    if market_session in {"weekend", "holiday"}:
-        return False
-    now_et = now_utc.astimezone(MARKET_TZ)
-    current_time = now_et.time()
-    return PREMARKET_OPEN_ET <= current_time <= AFTER_HOURS_CLOSE_ET
-
-
 def _intraday_source_status(
     *,
     latest_ts: datetime | None,
     now_utc: datetime,
-    market_session: str,
+    freshness_policy: str,
     max_age_sec: int,
 ) -> tuple[str, int | None]:
-    if not _session_requires_intraday(now_utc=now_utc, market_session=market_session):
+    if not policy_uses_intraday(freshness_policy):
         return "not_required", None
     age_sec = _age_seconds(latest_ts, now_utc)
     if age_sec is None:
@@ -176,6 +171,7 @@ def main() -> int:
     now_utc = time_ctx.now_utc
     now_local = time_ctx.now_local
     market_session = market_session_state(now_utc)
+    freshness_policy = freshness_policy_for_session(market_session)
     expected_min_market_date = previous_trading_day(now_utc.astimezone(MARKET_TZ).date())
     news_pull_max_age_sec = int(os.getenv("TRADLY_PREFLIGHT_NEWS_PULL_MAX_AGE_SEC", "3600"))
     macro_max_age_sec = int(os.getenv("TRADLY_PREFLIGHT_MACRO_MAX_AGE_SEC", "86400"))
@@ -257,7 +253,7 @@ def main() -> int:
     intraday_bar_status, intraday_bar_age_sec = _intraday_source_status(
         latest_ts=latest_intraday_bar,
         now_utc=now_utc,
-        market_session=market_session,
+        freshness_policy=freshness_policy,
         max_age_sec=intraday_bar_max_age_sec,
     )
     if not watermark_coverage_complete:
@@ -272,11 +268,16 @@ def main() -> int:
     lags.append(
         SourceLag(
             source="market_bars_1m",
-            status="fresh" if intraday_bar_status in {"fresh", "not_required"} else "stale",
+            status=(
+                "fresh"
+                if intraday_bar_status in {"fresh", "not_required"}
+                else ("warning" if policy_relaxes_intraday(freshness_policy) else "stale")
+            ),
             detail=(
                 f"market_session={market_session} status={intraday_bar_status} "
                 f"age_sec={intraday_bar_age_sec} max_age_sec={intraday_bar_max_age_sec} "
-                f"watermark_coverage={watermark_coverage_count}/{len(scoped_symbols)}"
+                f"watermark_coverage={watermark_coverage_count}/{len(scoped_symbols)} "
+                f"freshness_policy={freshness_policy}"
             ),
             backfill_from=intraday_backfill_from if intraday_bar_status in {"missing", "stale"} else None,
             backfill_to=intraday_backfill_to if intraday_bar_status in {"missing", "stale"} else None,
@@ -286,16 +287,21 @@ def main() -> int:
     snapshot_status, snapshot_age_sec = _intraday_source_status(
         latest_ts=latest_snapshot,
         now_utc=now_utc,
-        market_session=market_session,
+        freshness_policy=freshness_policy,
         max_age_sec=snapshot_max_age_sec,
     )
     lags.append(
         SourceLag(
             source="market_snapshots",
-            status="fresh" if snapshot_status in {"fresh", "not_required"} else "stale",
+            status=(
+                "fresh"
+                if snapshot_status in {"fresh", "not_required"}
+                else ("warning" if policy_relaxes_intraday(freshness_policy) else "stale")
+            ),
             detail=(
                 f"market_session={market_session} status={snapshot_status} "
-                f"age_sec={snapshot_age_sec} max_age_sec={snapshot_max_age_sec}"
+                f"age_sec={snapshot_age_sec} max_age_sec={snapshot_max_age_sec} "
+                f"freshness_policy={freshness_policy}"
             ),
         )
     )
@@ -380,7 +386,7 @@ def main() -> int:
             )
             return 1
 
-    if _session_requires_intraday(now_utc=now_utc, market_session=market_session) and intraday_bar_status in {"missing", "stale"}:
+    if policy_uses_intraday(freshness_policy) and intraday_bar_status in {"missing", "stale"}:
         actions.append("ingest_market_bars_1m")
         intraday_lag = next((lag for lag in lags if lag.source == "market_bars_1m"), None)
         env_intraday = dict(env)
@@ -406,7 +412,7 @@ def main() -> int:
             )
             return 1
 
-    if _session_requires_intraday(now_utc=now_utc, market_session=market_session) and snapshot_status in {"missing", "stale"}:
+    if policy_uses_intraday(freshness_policy) and snapshot_status in {"missing", "stale"}:
         actions.append("ingest_market_snapshots")
         env_snapshots = dict(env)
         env_snapshots["TRADLY_MARKET_BACKFILL_MODE"] = "cutover"
@@ -556,7 +562,7 @@ def main() -> int:
     final_intraday_status, final_intraday_age_sec = _intraday_source_status(
         latest_ts=final_latest_intraday_bar,
         now_utc=now_utc,
-        market_session=market_session,
+        freshness_policy=freshness_policy,
         max_age_sec=intraday_bar_max_age_sec,
     )
     if not final_watermark_coverage_complete:
@@ -565,11 +571,16 @@ def main() -> int:
     final_lags.append(
         SourceLag(
             source="market_bars_1m",
-            status="fresh" if final_intraday_status in {"fresh", "not_required"} else "stale",
+            status=(
+                "fresh"
+                if final_intraday_status in {"fresh", "not_required"}
+                else ("warning" if policy_relaxes_intraday(freshness_policy) else "stale")
+            ),
             detail=(
                 f"market_session={market_session} status={final_intraday_status} "
                 f"age_sec={final_intraday_age_sec} max_age_sec={intraday_bar_max_age_sec} "
-                f"watermark_coverage={final_watermark_coverage_count}/{len(scoped_symbols)}"
+                f"watermark_coverage={final_watermark_coverage_count}/{len(scoped_symbols)} "
+                f"freshness_policy={freshness_policy}"
             ),
         )
     )
@@ -577,16 +588,21 @@ def main() -> int:
     final_snapshot_status, final_snapshot_age_sec = _intraday_source_status(
         latest_ts=final_latest_snapshot,
         now_utc=now_utc,
-        market_session=market_session,
+        freshness_policy=freshness_policy,
         max_age_sec=snapshot_max_age_sec,
     )
     final_lags.append(
         SourceLag(
             source="market_snapshots",
-            status="fresh" if final_snapshot_status in {"fresh", "not_required"} else "stale",
+            status=(
+                "fresh"
+                if final_snapshot_status in {"fresh", "not_required"}
+                else ("warning" if policy_relaxes_intraday(freshness_policy) else "stale")
+            ),
             detail=(
                 f"market_session={market_session} status={final_snapshot_status} "
-                f"age_sec={final_snapshot_age_sec} max_age_sec={snapshot_max_age_sec}"
+                f"age_sec={final_snapshot_age_sec} max_age_sec={snapshot_max_age_sec} "
+                f"freshness_policy={freshness_policy}"
             ),
         )
     )

@@ -11,6 +11,12 @@ It reflects the current production contracts:
 - `macro_points`: refresh-time plus required-series coverage
 - `news_events`: Marketaux bucket high-water marks
 
+It also reflects the current session freshness policy:
+- `premarket_strict`
+- `market_hours_strict`
+- `after_hours_relaxed`
+- `closed_calendar_relaxed`
+
 ## Canonical Command
 
 Run:
@@ -45,8 +51,8 @@ A healthy run means all of the following are true:
 
 3. source freshness is acceptable for the current session:
    - `market_bars_1d` current for calendar
-   - `market_bars_1m` fresh if intraday required
-   - snapshots fresh if intraday required
+   - `market_bars_1m` fresh if intraday is strict, or warning-grade if after-hours relaxed
+   - snapshots fresh if intraday is strict, or warning-grade if after-hours relaxed
    - news pull fresh
    - macro fresh under current contract
 
@@ -65,12 +71,18 @@ A healthy run means all of the following are true:
 - check:
   - `intraday_bar_status = fresh`
   - `watermark_coverage = scoped universe`
+- policy nuance:
+  - strict failure in `premarket_strict` and `market_hours_strict`
+  - warning-grade in `after_hours_relaxed`
 
 ### `market_snapshots`
 
 - expectation: latest snapshot state is fresh
 - this is not a historical replay source
 - check: `snapshot_status = fresh`
+- policy nuance:
+  - strict failure in `premarket_strict` and `market_hours_strict`
+  - warning-grade in `after_hours_relaxed`
 
 ### `news`
 
@@ -109,6 +121,7 @@ After a run:
    - `latest_news_pull_utc`
    - `latest_macro_as_of_utc`
 4. if intraday session is active, confirm short-horizon readiness is true when expected
+5. confirm `freshness_policy` matches the current session expectation
 
 ## Failure Handling
 
@@ -204,6 +217,65 @@ Safe to run:
 - after market close
 
 The process is now reliable enough to be manually triggered whenever needed.
+
+## Recommended Operating Cadence
+
+Use this default cadence unless there is a specific reason to override it.
+
+### Premarket
+
+- run one full refresh before the cash open
+- goal: have the board and artifacts ready for the session
+
+### Market Hours
+
+- run the canonical cycle every `15` minutes
+- manual on-demand runs are still allowed between scheduled runs when needed
+
+### After Close
+
+- run one full refresh after the close
+- goal: settle end-of-day state and prepare overnight context
+
+### Manual Override
+
+- manual refresh is always allowed
+- use it for:
+  - major headlines
+  - suspicious stale state
+  - pre-decision checks
+
+## Alert Policy
+
+### Critical
+
+- latest cycle run fails during market hours
+- `market_bars_1m` is stale during market hours
+- `market_snapshots` are stale during market hours
+- repeated `SKIPPED_LOCK_HELD` across multiple scheduled runs
+
+### Warning
+
+- `news_pull_usage` goes stale during market hours
+- `macro_points` goes stale
+- one `SKIPPED_LOCK_HELD`
+- `market_bars_1m` or `market_snapshots` are stale during `after_hours_relaxed`
+
+### Info
+
+- preflight took corrective action but final state is still `PASS`
+- no-op/healthy run with `preflight_actions = []`
+
+## Rollout Plan
+
+1. run this cadence manually for one live session
+2. observe:
+   - cycle duration
+   - lock-held skips
+   - provider request pressure
+   - stale-source incidents
+3. if stable, automate the same cadence without changing the policy
+4. keep manual refresh available at all times
 
 ## Current Known Non-Blockers
 

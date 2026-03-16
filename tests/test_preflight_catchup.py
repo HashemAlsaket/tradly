@@ -91,7 +91,7 @@ class PreflightCatchupTests(unittest.TestCase):
             _intraday_source_status(
                 latest_ts=None,
                 now_utc=datetime(2026, 3, 16, 4, 0, tzinfo=timezone.utc),
-                market_session="weekend",
+                freshness_policy="closed_calendar_relaxed",
                 max_age_sec=1200,
             ),
             ("not_required", None),
@@ -102,10 +102,21 @@ class PreflightCatchupTests(unittest.TestCase):
             _intraday_source_status(
                 latest_ts=None,
                 now_utc=datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc),
-                market_session="market_hours",
+                freshness_policy="market_hours_strict",
                 max_age_sec=1200,
             ),
             ("missing", None),
+        )
+
+    def test_intraday_source_stale_under_after_hours_policy(self) -> None:
+        self.assertEqual(
+            _intraday_source_status(
+                latest_ts=datetime(2026, 3, 16, 20, 30),
+                now_utc=datetime(2026, 3, 16, 21, 0, tzinfo=timezone.utc),
+                freshness_policy="after_hours_relaxed",
+                max_age_sec=1200,
+            ),
+            ("stale", 1800),
         )
 
     def test_load_1m_watermark_max_uses_oldest_symbol_watermark(self) -> None:
