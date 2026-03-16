@@ -31,6 +31,7 @@ VALID_DATA_STATUS = {"REALTIME", "DELAYED"}
 MAX_MACRO_AGE_DAYS = 2
 MAX_MACRO_NEWS_AGE_HOURS = 24
 RAW_SCORE_SCALE = 12.0
+INTRADAY_OVERLAY_SCALE = 4.0
 LANE_TO_HORIZON = {
     "near_term": "1to3d",
     "swing_term": "1to2w",
@@ -43,6 +44,25 @@ class Bar:
     ts_utc: datetime
     close: float
     volume: float | None
+    data_status: str | None
+
+
+@dataclass(frozen=True)
+class IntradayBar:
+    ts_utc: datetime
+    close: float
+    volume: float | None
+    data_status: str | None
+
+
+@dataclass(frozen=True)
+class SnapshotPoint:
+    as_of_utc: datetime
+    last_trade_price: float | None
+    prev_close: float | None
+    change_pct: float | None
+    day_vwap: float | None
+    market_status: str | None
     data_status: str | None
 
 
@@ -68,6 +88,188 @@ def _returns(closes: list[float]) -> list[float]:
     return out
 
 
+def _latest_intraday_return(
+    *,
+    symbol: str,
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]],
+    daily_close: float,
+) -> tuple[float | None, datetime | None]:
+    bars = intraday_bars_by_symbol.get(symbol, [])
+    if not bars or daily_close <= 0:
+        return None, None
+    latest = bars[-1]
+    status = (latest.data_status or "").upper()
+    if status not in VALID_DATA_STATUS:
+        return None, None
+    return latest.close / daily_close - 1.0, latest.ts_utc
+
+
+def _snapshot_change_pct(snapshot: SnapshotPoint | None) -> float | None:
+    if snapshot is None:
+        return None
+    if snapshot.change_pct is not None:
+        return snapshot.change_pct / 100.0
+    if snapshot.last_trade_price is None or snapshot.prev_close is None or snapshot.prev_close <= 0:
+        return None
+    return snapshot.last_trade_price / snapshot.prev_close - 1.0
+
+
+def _intraday_overlay_inputs(
+    *,
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]],
+    latest_snapshots_by_symbol: dict[str, SnapshotPoint],
+    latest_closes: dict[str, float],
+) -> tuple[dict[str, float | str | None], datetime | None, datetime | None]:
+    spy_intraday_return_pct, spy_latest_intraday_ts = _latest_intraday_return(
+        symbol="SPY",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["SPY"],
+    )
+    qqq_intraday_return_pct, qqq_latest_intraday_ts = _latest_intraday_return(
+        symbol="QQQ",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["QQQ"],
+    )
+    vixy_intraday_return_pct, vixy_latest_intraday_ts = _latest_intraday_return(
+        symbol="VIXY",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["VIXY"],
+    )
+    tlt_intraday_return_pct, tlt_latest_intraday_ts = _latest_intraday_return(
+        symbol="TLT",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["TLT"],
+    )
+    ief_intraday_return_pct, ief_latest_intraday_ts = _latest_intraday_return(
+        symbol="IEF",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["IEF"],
+    )
+    shy_intraday_return_pct, shy_latest_intraday_ts = _latest_intraday_return(
+        symbol="SHY",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["SHY"],
+    )
+
+    latest_intraday_ts = max(
+        (
+            ts
+            for ts in (
+                spy_latest_intraday_ts,
+                qqq_latest_intraday_ts,
+                vixy_latest_intraday_ts,
+                tlt_latest_intraday_ts,
+                ief_latest_intraday_ts,
+                shy_latest_intraday_ts,
+            )
+            if ts is not None
+        ),
+        default=None,
+    )
+
+    spy_snapshot = latest_snapshots_by_symbol.get("SPY")
+    qqq_snapshot = latest_snapshots_by_symbol.get("QQQ")
+    vixy_snapshot = latest_snapshots_by_symbol.get("VIXY")
+    latest_snapshot_ts = max(
+        (
+            point.as_of_utc
+            for point in (spy_snapshot, qqq_snapshot, vixy_snapshot)
+            if point is not None and (point.data_status or "").upper() in VALID_DATA_STATUS
+        ),
+        default=None,
+    )
+
+    return (
+        {
+            "spy_intraday_return_pct": spy_intraday_return_pct,
+            "qqq_intraday_return_pct": qqq_intraday_return_pct,
+            "vixy_intraday_return_pct": vixy_intraday_return_pct,
+            "tlt_intraday_return_pct": tlt_intraday_return_pct,
+            "ief_intraday_return_pct": ief_intraday_return_pct,
+            "shy_intraday_return_pct": shy_intraday_return_pct,
+            "spy_snapshot_change_pct": _snapshot_change_pct(spy_snapshot),
+            "qqq_snapshot_change_pct": _snapshot_change_pct(qqq_snapshot),
+            "vixy_snapshot_change_pct": _snapshot_change_pct(vixy_snapshot),
+        },
+        latest_intraday_ts,
+        latest_snapshot_ts,
+    )
+
+
+def _build_intraday_overlay(
+    *,
+    intraday_metrics: dict[str, float | str | None],
+) -> tuple[str, str, float, list[str]]:
+    spy_intraday_return_pct = intraday_metrics.get("spy_intraday_return_pct")
+    qqq_intraday_return_pct = intraday_metrics.get("qqq_intraday_return_pct")
+    vixy_intraday_return_pct = intraday_metrics.get("vixy_intraday_return_pct")
+    spy_snapshot_change_pct = intraday_metrics.get("spy_snapshot_change_pct")
+    qqq_snapshot_change_pct = intraday_metrics.get("qqq_snapshot_change_pct")
+    vixy_snapshot_change_pct = intraday_metrics.get("vixy_snapshot_change_pct")
+
+    core_values = [spy_intraday_return_pct, qqq_intraday_return_pct, vixy_intraday_return_pct]
+    has_intraday = any(isinstance(value, float) for value in core_values)
+    has_snapshot = any(
+        isinstance(value, float) for value in (spy_snapshot_change_pct, qqq_snapshot_change_pct, vixy_snapshot_change_pct)
+    )
+    if not has_intraday and not has_snapshot:
+        return "unavailable", "unavailable", 0.0, ["intraday_overlay_unavailable"]
+    overlay_freshness = "minute_confirmed" if has_intraday else "snapshot_only"
+
+    pos = 0
+    neg = 0
+    why_code: list[str] = []
+
+    if isinstance(spy_intraday_return_pct, float):
+        if spy_intraday_return_pct > 0.002:
+            pos += 1
+        elif spy_intraday_return_pct < -0.002:
+            neg += 1
+    if isinstance(qqq_intraday_return_pct, float):
+        if qqq_intraday_return_pct > 0.001:
+            pos += 1
+        elif qqq_intraday_return_pct < -0.001:
+            neg += 1
+    if isinstance(vixy_intraday_return_pct, float):
+        if vixy_intraday_return_pct > 0.03:
+            neg += 1
+        elif vixy_intraday_return_pct < -0.03:
+            pos += 1
+
+    if isinstance(spy_snapshot_change_pct, float) and spy_snapshot_change_pct > 0.0:
+        pos += 1
+        why_code.append("snapshot_confirms_risk_on")
+    elif isinstance(spy_snapshot_change_pct, float) and spy_snapshot_change_pct < 0.0:
+        neg += 1
+        why_code.append("snapshot_confirms_risk_off")
+
+    if isinstance(qqq_snapshot_change_pct, float) and qqq_snapshot_change_pct > 0.0:
+        pos += 1
+    elif isinstance(qqq_snapshot_change_pct, float) and qqq_snapshot_change_pct < 0.0:
+        neg += 1
+
+    if isinstance(vixy_snapshot_change_pct, float):
+        if vixy_snapshot_change_pct > 0.02:
+            neg += 1
+        elif vixy_snapshot_change_pct < -0.02:
+            pos += 1
+
+    if pos >= neg + 2:
+        state = "supportive"
+        score = INTRADAY_OVERLAY_SCALE
+        why_code.insert(0, "intraday_tape_supportive")
+    elif neg >= pos + 2:
+        state = "risk_off"
+        score = -INTRADAY_OVERLAY_SCALE
+        why_code.insert(0, "intraday_tape_risk_off")
+    else:
+        state = "mixed"
+        score = 0.0
+        why_code.insert(0, "intraday_tape_mixed")
+
+    return state, overlay_freshness, score, why_code
+
+
 def _coverage_state(required_symbols_present: int, latest_market_date_ok: bool) -> str:
     if required_symbols_present < len(REGIME_SYMBOLS):
         return "insufficient_evidence"
@@ -91,7 +293,11 @@ def build_market_regime_row(
     now_utc: datetime,
     latest_macro_ts_utc: datetime | None,
     latest_macro_news_ts_utc: datetime | None,
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]] | None = None,
+    latest_snapshots_by_symbol: dict[str, SnapshotPoint] | None = None,
 ) -> dict:
+    intraday_bars_by_symbol = intraday_bars_by_symbol or {}
+    latest_snapshots_by_symbol = latest_snapshots_by_symbol or {}
     evidence: dict[str, object] = {}
     why_code: list[str] = []
     missing_symbols: list[str] = []
@@ -217,7 +423,16 @@ def build_market_regime_row(
     elif tlt_r20 < 0 and spy_r20 > 0:
         supports.append(("bond_bid_absent", 2.0))
 
-    raw_score = sum(value for _, value in supports) - sum(value for _, value in penalties)
+    daily_raw_score = sum(value for _, value in supports) - sum(value for _, value in penalties)
+    intraday_metrics, latest_intraday_ts, latest_snapshot_ts = _intraday_overlay_inputs(
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        latest_snapshots_by_symbol=latest_snapshots_by_symbol,
+        latest_closes=latest_closes,
+    )
+    intraday_overlay_state, intraday_overlay_freshness, intraday_overlay_score, intraday_overlay_why_code = _build_intraday_overlay(
+        intraday_metrics=intraday_metrics
+    )
+    raw_score = daily_raw_score + intraday_overlay_score
     score_normalized = normalize_score(score_raw=raw_score, raw_scale=RAW_SCORE_SCALE)
     signal_strength = round(abs(score_normalized) / 100.0, 4)
 
@@ -234,6 +449,9 @@ def build_market_regime_row(
         why_code.extend(label for label, _ in penalties[:3])
     else:
         why_code.append("regime_mixed")
+    for code in intraday_overlay_why_code:
+        if code not in why_code:
+            why_code.append(code)
 
     evidence_density_score = round(required_symbols_present / len(REGIME_SYMBOLS) * 100)
     pos = sum(1 for sign in feature_signs if sign > 0)
@@ -420,6 +638,41 @@ def build_market_regime_row(
             "vix_proxy_5d_change": round(vix_proxy_5d_change, 6),
             "supports": [label for label, _ in supports],
             "penalties": [label for label, _ in penalties],
+            "daily_raw_score": round(daily_raw_score, 4),
+            "intraday_overlay_score": round(intraday_overlay_score, 4),
+            "intraday_overlay": {
+                "intraday_overlay_state": intraday_overlay_state,
+                "intraday_overlay_freshness": intraday_overlay_freshness,
+                "latest_intraday_ts_utc": from_db_utc(latest_intraday_ts).isoformat() if latest_intraday_ts else None,
+                "latest_snapshot_ts_utc": from_db_utc(latest_snapshot_ts).isoformat() if latest_snapshot_ts else None,
+                "spy_intraday_return_pct": round(float(intraday_metrics["spy_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["spy_intraday_return_pct"], float)
+                else None,
+                "qqq_intraday_return_pct": round(float(intraday_metrics["qqq_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["qqq_intraday_return_pct"], float)
+                else None,
+                "vixy_intraday_return_pct": round(float(intraday_metrics["vixy_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["vixy_intraday_return_pct"], float)
+                else None,
+                "tlt_intraday_return_pct": round(float(intraday_metrics["tlt_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["tlt_intraday_return_pct"], float)
+                else None,
+                "ief_intraday_return_pct": round(float(intraday_metrics["ief_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["ief_intraday_return_pct"], float)
+                else None,
+                "shy_intraday_return_pct": round(float(intraday_metrics["shy_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["shy_intraday_return_pct"], float)
+                else None,
+                "spy_snapshot_change_pct": round(float(intraday_metrics["spy_snapshot_change_pct"]), 6)
+                if isinstance(intraday_metrics["spy_snapshot_change_pct"], float)
+                else None,
+                "qqq_snapshot_change_pct": round(float(intraday_metrics["qqq_snapshot_change_pct"]), 6)
+                if isinstance(intraday_metrics["qqq_snapshot_change_pct"], float)
+                else None,
+                "vixy_snapshot_change_pct": round(float(intraday_metrics["vixy_snapshot_change_pct"]), 6)
+                if isinstance(intraday_metrics["vixy_snapshot_change_pct"], float)
+                else None,
+            },
             "latest_macro_ts_utc": from_db_utc(latest_macro_ts_utc).isoformat() if latest_macro_ts_utc else None,
             "latest_macro_news_ts_utc": (
                 from_db_utc(latest_macro_news_ts_utc).isoformat() if latest_macro_news_ts_utc else None

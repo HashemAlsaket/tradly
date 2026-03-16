@@ -13,7 +13,7 @@ from tradly.models.calibration import (
     confidence_label,
     normalize_score,
 )
-from tradly.models.market_regime import Bar, clamp
+from tradly.models.market_regime import Bar, IntradayBar, SnapshotPoint, clamp
 from tradly.services.db_time import from_db_utc
 from tradly.services.market_calendar import (
     build_trading_calendar_row,
@@ -28,6 +28,7 @@ MARKET_TZ = ZoneInfo("America/New_York")
 MIN_DAILY_BARS = 61
 VALID_DATA_STATUS = {"REALTIME", "DELAYED"}
 RAW_SCORE_SCALE = 150.0
+INTRADAY_OVERLAY_SCALE = 20.0
 LIQUIDITY_STRONG_ADV20 = 50_000_000.0
 LIQUIDITY_MIN_ADV20 = 10_000_000.0
 HORIZON_TO_MARKET_LANE = {
@@ -116,6 +117,195 @@ def _merge_forced_coverage_state(base_state: str, forced_state: str | None) -> s
     return base_state
 
 
+def _latest_intraday_return(
+    *,
+    symbol: str,
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]],
+    daily_close: float,
+) -> tuple[float | None, datetime | None]:
+    bars = intraday_bars_by_symbol.get(symbol, [])
+    if not bars or daily_close <= 0:
+        return None, None
+    latest = bars[-1]
+    status = (latest.data_status or "").upper()
+    if status not in VALID_DATA_STATUS:
+        return None, None
+    return latest.close / daily_close - 1.0, latest.ts_utc
+
+
+def _snapshot_change_pct(snapshot: SnapshotPoint | None) -> float | None:
+    if snapshot is None:
+        return None
+    if snapshot.change_pct is not None:
+        return snapshot.change_pct / 100.0
+    if snapshot.last_trade_price is None or snapshot.prev_close is None or snapshot.prev_close <= 0:
+        return None
+    return snapshot.last_trade_price / snapshot.prev_close - 1.0
+
+
+def _symbol_intraday_overlay(
+    *,
+    symbol: str,
+    asset_type: str,
+    sector: str,
+    signal_direction: str,
+    latest_close: float,
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]],
+    latest_snapshots_by_symbol: dict[str, SnapshotPoint],
+    sector_row: dict | None,
+    market_daily_close: float | None,
+) -> tuple[dict[str, object], float, list[str]]:
+    symbol_intraday_return_pct, symbol_intraday_ts = _latest_intraday_return(
+        symbol=symbol,
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_close,
+    )
+    market_intraday_return_pct, market_intraday_ts = (
+        _latest_intraday_return(
+            symbol="SPY",
+            intraday_bars_by_symbol=intraday_bars_by_symbol,
+            daily_close=market_daily_close,
+        )
+        if isinstance(market_daily_close, float) and market_daily_close > 0
+        else (None, None)
+    )
+
+    sector_intraday_return_pct = None
+    sector_snapshot_change_pct = None
+    sector_intraday_ts = None
+    if asset_type == "stock" and isinstance(sector_row, dict):
+        sector_evidence = sector_row.get("evidence", {})
+        if isinstance(sector_evidence, dict):
+            intraday_overlay = sector_evidence.get("intraday_overlay", {})
+            if isinstance(intraday_overlay, dict):
+                sector_intraday_return_pct = intraday_overlay.get("proxy_intraday_return_pct")
+                sector_snapshot_change_pct = intraday_overlay.get("proxy_snapshot_change_pct")
+                latest_sector_intraday_ts = intraday_overlay.get("latest_intraday_ts_utc")
+                if isinstance(latest_sector_intraday_ts, str):
+                    sector_intraday_ts = latest_sector_intraday_ts
+
+    symbol_snapshot = latest_snapshots_by_symbol.get(symbol)
+    symbol_snapshot_change_pct = _snapshot_change_pct(symbol_snapshot)
+    latest_snapshot_ts = (
+        symbol_snapshot.as_of_utc
+        if symbol_snapshot is not None and (symbol_snapshot.data_status or "").upper() in VALID_DATA_STATUS
+        else None
+    )
+
+    has_intraday = any(isinstance(v, float) for v in (symbol_intraday_return_pct, market_intraday_return_pct))
+    has_snapshot = isinstance(symbol_snapshot_change_pct, float)
+    if not has_intraday and not has_snapshot:
+        return (
+            {
+                "symbol_intraday_overlay_state": "unavailable",
+                "symbol_intraday_overlay_freshness": "unavailable",
+                "latest_intraday_ts_utc": None,
+                "latest_snapshot_ts_utc": None,
+                "symbol_intraday_return_pct": None,
+                "sector_intraday_return_pct": None,
+                "market_intraday_return_pct": None,
+                "relative_intraday_vs_sector_pct": None,
+                "relative_intraday_vs_market_pct": None,
+                "symbol_snapshot_change_pct": None,
+            },
+            0.0,
+            ["symbol_intraday_overlay_unavailable"],
+        )
+
+    freshness = "minute_confirmed" if has_intraday else "snapshot_only"
+    relative_intraday_vs_sector_pct = (
+        symbol_intraday_return_pct - float(sector_intraday_return_pct)
+        if isinstance(symbol_intraday_return_pct, float) and isinstance(sector_intraday_return_pct, (float, int))
+        else None
+    )
+    relative_intraday_vs_market_pct = (
+        symbol_intraday_return_pct - market_intraday_return_pct
+        if isinstance(symbol_intraday_return_pct, float) and isinstance(market_intraday_return_pct, float)
+        else None
+    )
+
+    score = 0.0
+    why_code: list[str] = []
+    signal_sign = 1 if signal_direction == "bullish" else -1 if signal_direction == "bearish" else 0
+
+    symbol_effect = symbol_intraday_return_pct
+    if not isinstance(symbol_effect, float):
+        symbol_effect = symbol_snapshot_change_pct if isinstance(symbol_snapshot_change_pct, float) else None
+
+    if isinstance(symbol_effect, float):
+        if signal_sign > 0 and symbol_effect > 0.001:
+            score += INTRADAY_OVERLAY_SCALE
+            why_code.append("symbol_intraday_confirming" if freshness == "minute_confirmed" else "symbol_snapshot_confirming")
+        elif signal_sign > 0 and symbol_effect < -0.001:
+            score -= INTRADAY_OVERLAY_SCALE
+            why_code.append("symbol_intraday_fading" if freshness == "minute_confirmed" else "symbol_snapshot_fading")
+        elif signal_sign < 0 and symbol_effect < -0.001:
+            score += INTRADAY_OVERLAY_SCALE
+            why_code.append("symbol_intraday_confirming" if freshness == "minute_confirmed" else "symbol_snapshot_confirming")
+        elif signal_sign < 0 and symbol_effect > 0.001:
+            score -= INTRADAY_OVERLAY_SCALE
+            why_code.append("symbol_intraday_fading" if freshness == "minute_confirmed" else "symbol_snapshot_fading")
+        else:
+            why_code.append("symbol_intraday_mixed")
+
+    if isinstance(relative_intraday_vs_sector_pct, float):
+        if relative_intraday_vs_sector_pct > 0.003:
+            score += INTRADAY_OVERLAY_SCALE * 0.4
+            why_code.append("symbol_outperforming_sector_intraday")
+        elif relative_intraday_vs_sector_pct < -0.003:
+            score -= INTRADAY_OVERLAY_SCALE * 0.4
+            why_code.append("symbol_lagging_sector_intraday")
+
+    if isinstance(relative_intraday_vs_market_pct, float):
+        if relative_intraday_vs_market_pct > 0.003:
+            score += INTRADAY_OVERLAY_SCALE * 0.35
+            why_code.append("symbol_outperforming_market_intraday")
+        elif relative_intraday_vs_market_pct < -0.003:
+            score -= INTRADAY_OVERLAY_SCALE * 0.35
+            why_code.append("symbol_lagging_market_intraday")
+
+    if score >= INTRADAY_OVERLAY_SCALE * 0.5:
+        state = "confirming"
+    elif score <= -(INTRADAY_OVERLAY_SCALE * 0.5):
+        state = "fading"
+    else:
+        state = "mixed"
+
+    latest_intraday_ts = max(
+        (ts for ts in (symbol_intraday_ts, market_intraday_ts) if ts is not None),
+        default=None,
+    )
+
+    return (
+        {
+            "symbol_intraday_overlay_state": state,
+            "symbol_intraday_overlay_freshness": freshness,
+            "latest_intraday_ts_utc": from_db_utc(latest_intraday_ts).isoformat() if latest_intraday_ts else None,
+            "latest_snapshot_ts_utc": from_db_utc(latest_snapshot_ts).isoformat() if latest_snapshot_ts else None,
+            "symbol_intraday_return_pct": round(float(symbol_intraday_return_pct), 6)
+            if isinstance(symbol_intraday_return_pct, float)
+            else None,
+            "sector_intraday_return_pct": round(float(sector_intraday_return_pct), 6)
+            if isinstance(sector_intraday_return_pct, (float, int))
+            else None,
+            "market_intraday_return_pct": round(float(market_intraday_return_pct), 6)
+            if isinstance(market_intraday_return_pct, float)
+            else None,
+            "relative_intraday_vs_sector_pct": round(float(relative_intraday_vs_sector_pct), 6)
+            if isinstance(relative_intraday_vs_sector_pct, float)
+            else None,
+            "relative_intraday_vs_market_pct": round(float(relative_intraday_vs_market_pct), 6)
+            if isinstance(relative_intraday_vs_market_pct, float)
+            else None,
+            "symbol_snapshot_change_pct": round(float(symbol_snapshot_change_pct), 6)
+            if isinstance(symbol_snapshot_change_pct, float)
+            else None,
+        },
+        score,
+        why_code,
+    )
+
+
 def build_symbol_movement_rows(
     *,
     bars_by_symbol: dict[str, list[Bar]],
@@ -126,12 +316,17 @@ def build_symbol_movement_rows(
     now_utc: datetime,
     market_overlay_fresh: bool,
     sector_overlay_fresh: bool,
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]] | None = None,
+    latest_snapshots_by_symbol: dict[str, SnapshotPoint] | None = None,
 ) -> list[dict]:
+    intraday_bars_by_symbol = intraday_bars_by_symbol or {}
+    latest_snapshots_by_symbol = latest_snapshots_by_symbol or {}
     rows: list[dict] = []
 
     market_evidence = market_regime_row.get("evidence", {}) if isinstance(market_regime_row.get("evidence"), dict) else {}
     market_row_available = bool(market_regime_row)
     market_r20 = float(market_evidence.get("spy_r20", 0.0) or 0.0)
+    market_daily_close = float(market_evidence.get("spy_latest_close", 0.0) or 0.0) if market_evidence else 0.0
     market_lane_diagnostics = (
         market_regime_row.get("lane_diagnostics", {})
         if isinstance(market_regime_row.get("lane_diagnostics"), dict)
@@ -252,6 +447,21 @@ def build_symbol_movement_rows(
             signal_direction = "neutral"
             why_code.append("symbol_price_structure_mixed")
 
+        intraday_overlay, intraday_overlay_score, intraday_overlay_why_code = _symbol_intraday_overlay(
+            symbol=symbol,
+            asset_type=asset_type,
+            sector=sector,
+            signal_direction=signal_direction,
+            latest_close=closes[-1],
+            intraday_bars_by_symbol=intraday_bars_by_symbol,
+            latest_snapshots_by_symbol=latest_snapshots_by_symbol,
+            sector_row=sector_row if isinstance(sector_row, dict) else None,
+            market_daily_close=market_daily_close if market_daily_close > 0 else None,
+        )
+        raw_score += intraday_overlay_score
+        score_normalized = normalize_score(score_raw=raw_score, raw_scale=RAW_SCORE_SCALE)
+        signal_strength = round(abs(score_normalized) / 100.0, 4)
+
         if relative_vs_market > 0.02:
             why_code.append("outperforming_market_20d")
         elif relative_vs_market < -0.02:
@@ -266,6 +476,9 @@ def build_symbol_movement_rows(
             why_code.append("adv20_below_minimum")
         if vol20 > 0.03:
             why_code.append("volatility_elevated")
+        for code in intraday_overlay_why_code:
+            if code not in why_code:
+                why_code.append(code)
 
         if (
             abs(symbol_r20) >= 0.025
@@ -463,6 +676,8 @@ def build_symbol_movement_rows(
                 "sector_overlay_fresh": sector_overlay_fresh,
                 "sector_relative_20d": round(relative_vs_sector, 6) if sector_overlay_present else None,
                 "sector_score": sector_row.get("score_normalized") if isinstance(sector_row, dict) else None,
+                "intraday_overlay_score": round(intraday_overlay_score, 4),
+                "intraday_overlay": intraday_overlay,
                 "evidence_density_score": evidence_density_score,
                 "feature_agreement_score": feature_agreement_score,
                 "freshness_score": freshness_score,

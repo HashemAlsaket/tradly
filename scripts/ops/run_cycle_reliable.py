@@ -119,7 +119,9 @@ def main() -> int:
         cycle_stderr = ""
         for attempt in range(1, max_attempts + 1):
             cycle_cmd = [sys.executable, "-m", "tradly.pipeline.cycle"]
-            rc, out, err = _run_step(cycle_cmd, repo_root, env)
+            cycle_env = env.copy()
+            cycle_env["TRADLY_SKIP_PREFLIGHT_CATCHUP"] = "1"
+            rc, out, err = _run_step(cycle_cmd, repo_root, cycle_env)
             cycle_rc = rc
             cycle_stdout = out
             cycle_stderr = err

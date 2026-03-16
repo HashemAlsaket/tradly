@@ -19,7 +19,7 @@ class DashboardDecisionTests(unittest.TestCase):
                         "execution_ready": True,
                         "recommendation_class": "contrarian_long",
                         "review_disposition": "review_required",
-                        "review_bucket": "contrarian_review",
+                        "review_bucket": "contrarian_rebound",
                     }
                 ]
             }
@@ -43,7 +43,7 @@ class DashboardDecisionTests(unittest.TestCase):
                     "execution_ready": True,
                     "recommendation_class": "contrarian_long",
                     "review_disposition": "review_required",
-                    "review_bucket": "contrarian_review",
+                    "review_bucket": "contrarian_rebound",
                 }
             ]
         }

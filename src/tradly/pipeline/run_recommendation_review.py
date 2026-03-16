@@ -6,8 +6,10 @@ from pathlib import Path
 
 from tradly.config import get_model_registry_entry
 from tradly.models.recommendation_review import build_review_rows
+from tradly.ops.runtime_freshness_audit import _intraday_source_status, _session_requires_intraday
 from tradly.paths import get_repo_root
 from tradly.services.artifact_alignment import assess_artifact_alignment
+from tradly.services.market_calendar import market_session_state
 from tradly.services.time_context import get_time_context
 
 MAX_UPSTREAM_AGE = timedelta(hours=6)
@@ -62,6 +64,49 @@ def _quality_audit(rows: list[dict]) -> dict[str, object]:
     }
 
 
+def _intraday_actionable(*, repo_root: Path, now_utc) -> tuple[bool, dict[str, object]]:
+    db_path = repo_root / "data" / "tradly.duckdb"
+    try:
+        import duckdb
+    except ImportError:
+        return True, {"reason": "duckdb_missing"}
+
+    conn = duckdb.connect(str(db_path), read_only=True)
+    try:
+        latest_intraday_bar = conn.execute(
+            "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1m'"
+        ).fetchone()[0]
+        latest_snapshot = conn.execute(
+            "SELECT MAX(as_of_utc) FROM market_snapshots"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    market_session = market_session_state(now_utc)
+    intraday_status, _ = _intraday_source_status(
+        latest_ts=latest_intraday_bar,
+        now_utc=now_utc,
+        market_session=market_session,
+        max_age_sec=1200,
+    )
+    snapshot_status, _ = _intraday_source_status(
+        latest_ts=latest_snapshot,
+        now_utc=now_utc,
+        market_session=market_session,
+        max_age_sec=1200,
+    )
+    actionable = (
+        not _session_requires_intraday(now_utc=now_utc, market_session=market_session)
+        or intraday_status == "fresh"
+        or snapshot_status == "fresh"
+    )
+    return actionable, {
+        "market_session_state": market_session,
+        "intraday_bar_status": intraday_status,
+        "snapshot_status": snapshot_status,
+    }
+
+
 def main() -> int:
     repo_root = get_repo_root()
     runs_dir = repo_root / "data" / "runs"
@@ -87,7 +132,12 @@ def main() -> int:
         print("recommendation_review_v1_failed:recommendation_rows_missing")
         return 3
 
-    rows = build_review_rows(recommendation_rows=recommendation_rows, now_utc=time_ctx.now_utc)
+    intraday_actionable, intraday_summary = _intraday_actionable(repo_root=repo_root, now_utc=time_ctx.now_utc)
+    rows = build_review_rows(
+        recommendation_rows=recommendation_rows,
+        now_utc=time_ctx.now_utc,
+        intraday_actionable=intraday_actionable,
+    )
     quality_audit = _quality_audit(rows)
     counts: dict[str, int] = {}
     bucket_counts: dict[str, int] = {}
@@ -113,6 +163,9 @@ def main() -> int:
         "input_summary": {
             "upstream_model": "recommendation_v1",
             "recommendation_count": len(recommendation_rows),
+            "recommendation_run_timestamp_utc": str(recommendation_payload.get("run_timestamp_utc", "")),
+            "intraday_actionable": intraday_actionable,
+            "intraday_summary": intraday_summary,
         },
         "input_audit": {
             "status": _input_status(recommendation_payload, rows),

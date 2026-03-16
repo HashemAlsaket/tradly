@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tradly.config import get_model_registry_entry
 from tradly.models.calibration import audit_model_artifact
-from tradly.models.market_regime import Bar
+from tradly.models.market_regime import Bar, IntradayBar, SnapshotPoint
 from tradly.models.symbol_movement import build_symbol_movement_rows
 from tradly.paths import get_repo_root
 from tradly.services.artifact_alignment import assess_artifact_alignment
@@ -31,6 +31,34 @@ def _latest_bar_by_day(rows: list[tuple]) -> dict[str, list[Bar]]:
         bars = [item[1] for item in by_day.values()]
         bars.sort(key=lambda item: item.ts_utc)
         out[symbol] = bars
+    return out
+
+
+def _recent_intraday_bars(rows: list[tuple]) -> dict[str, list[IntradayBar]]:
+    grouped: dict[str, list[IntradayBar]] = defaultdict(list)
+    for symbol, ts_utc, close, volume, data_status in rows:
+        if close is None:
+            continue
+        grouped[symbol].append(
+            IntradayBar(ts_utc=ts_utc, close=float(close), volume=volume, data_status=data_status)
+        )
+    for bars in grouped.values():
+        bars.sort(key=lambda item: item.ts_utc)
+    return dict(grouped)
+
+
+def _latest_snapshots_by_symbol(rows: list[tuple]) -> dict[str, SnapshotPoint]:
+    out: dict[str, SnapshotPoint] = {}
+    for symbol, as_of_utc, last_trade_price, prev_close, change_pct, day_vwap, market_status, data_status in rows:
+        out[str(symbol)] = SnapshotPoint(
+            as_of_utc=as_of_utc,
+            last_trade_price=float(last_trade_price) if last_trade_price is not None else None,
+            prev_close=float(prev_close) if prev_close is not None else None,
+            change_pct=float(change_pct) if change_pct is not None else None,
+            day_vwap=float(day_vwap) if day_vwap is not None else None,
+            market_status=str(market_status) if market_status is not None else None,
+            data_status=str(data_status) if data_status is not None else None,
+        )
     return out
 
 
@@ -106,6 +134,7 @@ def main() -> int:
     conn = duckdb.connect(str(db_path), read_only=True)
     try:
         placeholders = ", ".join("?" for _ in model_symbols)
+        intraday_from_utc = time_ctx.now_utc - timedelta(days=2)
         bar_rows = conn.execute(
             f"""
             SELECT symbol, ts_utc, close, volume, data_status, correction_seq
@@ -113,6 +142,31 @@ def main() -> int:
             WHERE timeframe = '1d'
               AND symbol IN ({placeholders})
             ORDER BY symbol, ts_utc
+            """,
+            model_symbols,
+        ).fetchall()
+        intraday_rows = conn.execute(
+            f"""
+            SELECT symbol, ts_utc, close, volume, data_status
+            FROM market_bars
+            WHERE timeframe = '1m'
+              AND symbol IN ({placeholders})
+              AND ts_utc >= ?
+            ORDER BY symbol, ts_utc
+            """,
+            [*model_symbols, intraday_from_utc],
+        ).fetchall()
+        snapshot_rows = conn.execute(
+            f"""
+            SELECT symbol, as_of_utc, last_trade_price, prev_close, change_pct, day_vwap, market_status, data_status
+            FROM (
+                SELECT *,
+                       row_number() over (partition by symbol order by as_of_utc desc) as rn
+                FROM market_snapshots
+                WHERE symbol IN ({placeholders})
+            ) t
+            WHERE rn = 1
+            ORDER BY symbol
             """,
             model_symbols,
         ).fetchall()
@@ -133,6 +187,8 @@ def main() -> int:
         return 7
 
     bars_by_symbol = _latest_bar_by_day(bar_rows)
+    intraday_bars_by_symbol = _recent_intraday_bars(intraday_rows)
+    latest_snapshots_by_symbol = _latest_snapshots_by_symbol(snapshot_rows)
     symbol_metadata = {
         str(symbol): {"asset_type": str(asset_type), "sector": str(sector)}
         for symbol, asset_type, sector in metadata_rows
@@ -152,6 +208,8 @@ def main() -> int:
         now_utc=time_ctx.now_utc,
         market_overlay_fresh=market_overlay_fresh,
         sector_overlay_fresh=sector_overlay_fresh,
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        latest_snapshots_by_symbol=latest_snapshots_by_symbol,
     )
     quality_audit = audit_model_artifact(rows).to_dict()
 
@@ -182,6 +240,8 @@ def main() -> int:
         "input_summary": {
             "model_symbol_count": len(model_symbols),
             "bar_symbol_count": len(bars_by_symbol),
+            "intraday_symbol_count": len(intraday_bars_by_symbol),
+            "snapshot_symbol_count": len(latest_snapshots_by_symbol),
             "market_regime_present": True,
             "sector_row_count": len(sector_rows_by_scope),
         },

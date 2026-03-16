@@ -394,7 +394,8 @@ def _compute_system_state(
         reasons.append("freshness_snapshot_outdated_for_latest_model_runs")
 
     if reasons:
-        return ("blocked", reasons, warnings)
+        warnings.extend(reasons)
+        return ("research_only", [], warnings)
 
     research_signals = []
     for label, payload in (
@@ -433,6 +434,24 @@ def _market_status_copy(freshness: dict[str, Any], metrics: dict[str, Any], now_
     if session == "market_hours":
         return "Market open", "Live cash session"
     return _fmt_age_from_iso(metrics.get("latest_daily_bar_utc"), now_utc), "Market session unclear"
+
+
+def _market_tape_caution(market_payload: dict[str, Any] | None) -> str:
+    if not isinstance(market_payload, dict):
+        return "Tape state unavailable"
+    rows = market_payload.get("rows")
+    if not isinstance(rows, list) or not rows:
+        return "Tape state unavailable"
+    row = rows[0] if isinstance(rows[0], dict) else {}
+    signal = str(row.get("signal_direction", "")).strip().lower()
+    confidence = int(row.get("confidence_score", 0) or 0)
+    if signal == "bearish" and confidence >= 55:
+        return "Macro unstable"
+    if signal == "neutral":
+        return "Macro mixed"
+    if signal == "bullish" and confidence >= 55:
+        return "Risk-on improving"
+    return "Risk-on not confirmed"
 
 
 def _freshness_brief(value: Any, now_utc: datetime) -> str:
@@ -499,9 +518,7 @@ def _render_top_status(snapshot: dict, now_utc: datetime, state: str, reasons: l
             medium_note,
             f"Now: {_fmt_now_ct(now_utc)}<br/>Latest news: {_fmt_ct_from_iso(metrics.get('latest_news_pull_utc'))}<br/>Latest LLM review: {_fmt_ct_from_iso(metrics.get('latest_interp_utc'))}",
         )
-    if reasons:
-        st.error("Blocked by: " + ", ".join(reasons))
-    elif state == "ready":
+    if state == "ready":
         st.success("Ready")
 
 
@@ -531,8 +548,6 @@ def _summarize_horizon_states(ensemble_payload: dict, global_state: str) -> list
             state = str(horizon_row.get("state", "missing"))
             counts[state] = counts.get(state, 0) + 1
         dominant_state = max(counts, key=counts.get) if counts else "missing"
-        if global_state == "blocked":
-            dominant_state = "blocked"
         summaries.append(
             {
                 "Horizon": horizon,
@@ -655,31 +670,21 @@ def _render_action_list(title: str, rows: list[dict[str, Any]]) -> None:
     if not rows:
         st.caption("None")
         return
-    approved_rows = [row for row in rows if str(row.get("ReviewDisposition", "")) == "promote"]
-    review_rows = [row for row in rows if str(row.get("ReviewDisposition", "")) == "review_required"]
-    other_rows = [row for row in rows if str(row.get("ReviewDisposition", "")) not in {"promote", "review_required"}]
     st.markdown(f'<div class="tradly-section-subtle">{len(rows)} shown</div>', unsafe_allow_html=True)
 
-    def _render_rows(group_rows: list[dict[str, Any]], *, label: str | None = None) -> None:
-        if label and group_rows:
-            st.caption(label)
+    def _render_rows(group_rows: list[dict[str, Any]]) -> None:
         for row in group_rows:
             symbol = str(row["Symbol"])
             horizon = str(row["Horizon"])
             confidence = int(row["Confidence"])
             reason = str(row["Reason"]).strip()
             execution_ready = bool(row.get("ExecutionReady", True))
-            review_disposition = str(row.get("ReviewDisposition", "")).strip()
             horizon_label = _format_horizon_label(horizon)
             lane_name = _horizon_lane_name(horizon)
             if execution_ready:
                 context_note = f"{lane_name.title()} • {horizon_label}"
             else:
                 context_note = f"{lane_name.title()} • {horizon_label} • deferred until next session"
-            if review_disposition == "review_required":
-                context_note = f"{context_note} • needs review"
-            elif review_disposition == "promote":
-                context_note = f"{context_note} • approved"
             st.markdown(
                 f"""
                 <div class="tradly-card {section_class}">
@@ -696,12 +701,7 @@ def _render_action_list(title: str, rows: list[dict[str, Any]]) -> None:
                 unsafe_allow_html=True,
             )
 
-    if approved_rows:
-        _render_rows(approved_rows, label="Approved")
-    if review_rows:
-        _render_rows(review_rows, label="Needs Review")
-    if other_rows:
-        _render_rows(other_rows)
+    _render_rows(rows)
 
 
 def _render_action_board(review_payload: dict) -> None:
@@ -709,11 +709,6 @@ def _render_action_board(review_payload: dict) -> None:
     if not ranked_rows:
         st.caption("No decisions available.")
         return
-    promote_or_review_buy = {
-        str(row["Symbol"])
-        for row in ranked_rows
-        if str(row["Action"]) == "Buy" and str(row["ReviewDisposition"]) in {"promote", "review_required"}
-    }
     promote_or_review_sell = {
         str(row["Symbol"])
         for row in ranked_rows
@@ -723,7 +718,8 @@ def _render_action_board(review_payload: dict) -> None:
         [
             row
             for row in ranked_rows
-            if str(row["Action"]) == "Buy" and str(row["ReviewDisposition"]) in {"promote", "review_required"}
+            if str(row["Action"]) == "Buy"
+            and str(row["ReviewDisposition"]) in {"promote", "review_required"}
         ],
         key=lambda row: (
             1 if str(row["ReviewDisposition"]) == "promote" else 0,
@@ -750,14 +746,14 @@ def _render_action_board(review_payload: dict) -> None:
             if str(row["ReviewDisposition"]) in {"watch", "defer"}
             or (
                 str(row["ReviewDisposition"]) == "review_required"
-                and str(row["Symbol"]) not in promote_or_review_buy
+                and str(row["Action"]) not in {"Buy", "Sell/Trim"}
                 and str(row["Symbol"]) not in promote_or_review_sell
             )
         ],
         key=lambda row: int(row["Confidence"]),
         reverse=True,
     )[:8]
-    c1, c2, c3 = st.columns([0.92, 0.92, 1.16], gap="medium")
+    c1, c2, c3 = st.columns([0.96, 0.96, 1.08], gap="medium")
     with c1:
         _render_action_list("Buy", buy_rows)
     with c2:
@@ -956,8 +952,12 @@ def main() -> None:
         _render_status_card(
             "Market",
             market_value,
-            f"Latest market: {_fmt_ct_from_iso(metrics.get('latest_daily_bar_utc'))}",
-            market_note,
+            _market_tape_caution(market_payload),
+            (
+                f"{market_note}<br/>"
+                f"Daily: {_fmt_ct_from_iso(metrics.get('latest_daily_bar_utc'))}<br/>"
+                f"Intraday: {_fmt_ct_from_iso(metrics.get('latest_intraday_bar_utc'))}"
+            ),
         )
     with bar3:
         short_term_ready = bool(metrics.get("short_horizon_execution_ready", False))
@@ -965,7 +965,10 @@ def main() -> None:
             "Short-Term",
             "Active" if short_term_ready else "Deferred",
             "Execution live" if short_term_ready else "Execution waits for next cash session",
-            f"Latest market: {_fmt_ct_from_iso(metrics.get('latest_daily_bar_utc'))}",
+            (
+                f"Intraday: {_fmt_ct_from_iso(metrics.get('latest_intraday_bar_utc'))}<br/>"
+                f"Snapshot: {_fmt_ct_from_iso(metrics.get('latest_snapshot_utc'))}"
+            ),
         )
     with bar4:
         medium_ready = bool(metrics.get("medium_horizon_thesis_usable", False))
@@ -977,14 +980,10 @@ def main() -> None:
             f"News: {_fmt_ct_from_iso(metrics.get('latest_news_pull_utc'))}<br/>LLM: {_fmt_ct_from_iso(metrics.get('latest_interp_utc'))}",
         )
 
-    if reasons:
-        st.error("Blocked by: " + ", ".join(reasons))
-    elif state == "ready":
+    if state == "ready":
         st.success("Ready")
 
     if section == "Decisions":
-        if state == "blocked":
-            st.warning("System blocked. Do not act until blockers are cleared.")
         _render_action_board(review_payload if review_payload else recommendation_payload)
         if show_more_symbols:
             _render_symbol_stack(review_payload if review_payload else recommendation_payload)

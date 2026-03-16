@@ -28,7 +28,7 @@ Initial scaffold for a long-only, manual-execution trading intelligence platform
 - `OPENAI_STT_MODEL`
 
 ## Data provider env vars
-- `POLYGON_API_KEY`
+- `MASSIVE_API_KEY`
 - `MARKETAUX_API_KEY`
 - `FRED_API_KEY`
 - `MACRO_LOOKBACK_DAYS` (optional, default `730`)
@@ -45,7 +45,7 @@ Initial scaffold for a long-only, manual-execution trading intelligence platform
    - `python scripts/pipeline/seed_news.py`
 5. Seed macro history from FRED:
    - `python scripts/pipeline/seed_macro.py`
-6. Ingest strict daily market bars from Polygon:
+6. Ingest strict daily market bars from Massive:
    - `python scripts/pipeline/ingest_market_bars.py`
    - includes strict context symbols for regime modeling: `SPY`, `QQQ`, `VIXY` (VIX proxy), `TLT`, `IEF`, `SHY`
 7. Run budgeted news ingestion (daily cap logic from watchlist config, currently 2500/day):

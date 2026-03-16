@@ -81,6 +81,68 @@ class RunCycleReliableTests(unittest.TestCase):
             self.assertEqual(logged_payload["freshness_stdout_tail"], json.dumps(snapshot_payload["freshness"], ensure_ascii=True, indent=2))
             self.assertEqual(json.loads(snapshot_path.read_text(encoding="utf-8")), snapshot_payload)
 
+    def test_sets_skip_preflight_for_inner_cycle(self) -> None:
+        module = _load_module()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            snapshot_path = repo_root / "data" / "journal" / "freshness_snapshot.json"
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_path.write_text(
+                json.dumps(
+                    {
+                        "written_at_utc": "2026-03-15T03:05:00+00:00",
+                        "cycle_status": "PASS",
+                        "postflight_status": "PASS",
+                        "overall_status": "PASS",
+                        "freshness": {"overall_status": "PASS", "checks": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            captured_envs: list[dict[str, str]] = []
+            step_results = [
+                (0, json.dumps({"lags": {}, "actions": []}), ""),
+                (0, "cycle ok", ""),
+            ]
+
+            def fake_run_step(cmd, cwd, env):
+                captured_envs.append(dict(env))
+                return step_results.pop(0)
+
+            class FakeLockFile:
+                def fileno(self):
+                    return 0
+
+                def close(self):
+                    return None
+
+            real_path_open = RealPath.open
+
+            def fake_path_open(path_obj, *args, **kwargs):
+                if path_obj == repo_root / "data" / "journal" / "cycle.lock":
+                    return FakeLockFile()
+                return real_path_open(path_obj, *args, **kwargs)
+
+            with patch.object(module.Path, "resolve", return_value=repo_root / "scripts" / "ops" / "run_cycle_reliable.py"), \
+                patch.object(module, "_load_dotenv"), \
+                patch.object(module, "_run_step", side_effect=fake_run_step), \
+                patch.object(module, "_append_log"), \
+                patch.object(module, "time"), \
+                patch.object(module, "fcntl") as fake_fcntl, \
+                patch.object(module.Path, "open", new=fake_path_open), \
+                patch.object(module.os, "getenv", side_effect=lambda key, default=None: default):
+                fake_fcntl.LOCK_EX = 1
+                fake_fcntl.LOCK_NB = 2
+                fake_fcntl.LOCK_UN = 8
+                fake_fcntl.flock.return_value = None
+                rc = module.main()
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(len(captured_envs), 2)
+            self.assertNotIn("TRADLY_SKIP_PREFLIGHT_CATCHUP", captured_envs[0])
+            self.assertEqual(captured_envs[1].get("TRADLY_SKIP_PREFLIGHT_CATCHUP"), "1")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from tradly.models.market_regime import Bar
+from tradly.models.market_regime import Bar, IntradayBar, SnapshotPoint
 from tradly.models.sector_movement import build_sector_movement_rows
 
 
@@ -16,6 +16,21 @@ def _make_bars(*, close_start: float, step: float, status: str = "DELAYED") -> l
                 ts_utc=start + timedelta(days=idx),
                 close=close_start + step * idx,
                 volume=1_000_000.0,
+                data_status=status,
+            )
+        )
+    return bars
+
+
+def _make_intraday_bars(*, close_start: float, step: float, status: str = "DELAYED") -> list[IntradayBar]:
+    start = datetime(2026, 3, 16, 9, 30, tzinfo=timezone.utc)
+    bars: list[IntradayBar] = []
+    for idx in range(5):
+        bars.append(
+            IntradayBar(
+                ts_utc=start + timedelta(minutes=idx),
+                close=close_start + step * idx,
+                volume=25_000.0,
                 data_status=status,
             )
         )
@@ -51,6 +66,7 @@ class SectorMovementObservabilityTests(unittest.TestCase):
         self.assertIn("audit_flags", diagnostics)
         self.assertEqual(diagnostics["latency_assessment"]["latency_class"], "delayed_material")
         self.assertEqual(diagnostics["confidence_inputs"]["informative_feature_count"], 2)
+        self.assertEqual(diagnostics["confidence_inputs"]["independent_informative_feature_count"], 1)
         self.assertEqual(diagnostics["normalization"]["raw_scale"], 140.0)
         self.assertEqual(technology_row["lane_primary"], "near_term")
         self.assertIn("near_term", technology_row["lane_diagnostics"])
@@ -104,6 +120,65 @@ class SectorMovementObservabilityTests(unittest.TestCase):
         self.assertEqual(position_term["coverage_state"], "sufficient_evidence")
         self.assertTrue(position_term["lane_data_freshness_ok"])
         self.assertGreaterEqual(position_term["confidence_score"], technology_row["lane_diagnostics"]["swing_term"]["confidence_score"])
+
+    def test_sector_row_emits_supportive_intraday_overlay(self) -> None:
+        bars_by_symbol = {
+            "SPY": _make_bars(close_start=500.0, step=-0.2),
+            "QQQ": _make_bars(close_start=400.0, step=-0.1),
+            "IWM": _make_bars(close_start=200.0, step=-0.05),
+            "DIA": _make_bars(close_start=350.0, step=-0.08),
+            "VTI": _make_bars(close_start=250.0, step=-0.07),
+            "XLK": _make_bars(close_start=180.0, step=0.15),
+        }
+        sector_members = {"Technology": ["AAPL", "MSFT", "NVDA"]}
+        rows = build_sector_movement_rows(
+            bars_by_symbol=bars_by_symbol,
+            now_utc=datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc),
+            sector_members=sector_members,
+            intraday_bars_by_symbol={
+                "SPY": _make_intraday_bars(close_start=487.9, step=0.03),
+                "QQQ": _make_intraday_bars(close_start=394.1, step=0.02),
+                "XLK": _make_intraday_bars(close_start=189.3, step=0.12),
+            },
+            latest_snapshots_by_symbol={},
+        )
+        row = next(item for item in rows if item["scope_id"] == "Technology")
+        overlay = row["evidence"]["intraday_overlay"]
+        self.assertEqual(overlay["sector_intraday_overlay_state"], "supportive")
+        self.assertEqual(overlay["sector_intraday_overlay_freshness"], "minute_confirmed")
+        self.assertIn("sector_intraday_confirming", row["why_code"])
+
+    def test_sector_row_emits_snapshot_only_overlay(self) -> None:
+        bars_by_symbol = {
+            "SPY": _make_bars(close_start=500.0, step=-0.2),
+            "QQQ": _make_bars(close_start=400.0, step=-0.1),
+            "IWM": _make_bars(close_start=200.0, step=-0.05),
+            "DIA": _make_bars(close_start=350.0, step=-0.08),
+            "VTI": _make_bars(close_start=250.0, step=-0.07),
+            "XLK": _make_bars(close_start=180.0, step=0.15),
+        }
+        sector_members = {"Technology": ["AAPL", "MSFT", "NVDA"]}
+        rows = build_sector_movement_rows(
+            bars_by_symbol=bars_by_symbol,
+            now_utc=datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc),
+            sector_members=sector_members,
+            intraday_bars_by_symbol={},
+            latest_snapshots_by_symbol={
+                "XLK": SnapshotPoint(
+                    as_of_utc=datetime(2026, 3, 16, 10, 0, tzinfo=timezone.utc),
+                    last_trade_price=189.8,
+                    prev_close=189.0,
+                    change_pct=0.42,
+                    day_vwap=None,
+                    market_status="open",
+                    data_status="REALTIME",
+                )
+            },
+        )
+        row = next(item for item in rows if item["scope_id"] == "Technology")
+        overlay = row["evidence"]["intraday_overlay"]
+        self.assertEqual(overlay["sector_intraday_overlay_freshness"], "snapshot_only")
+        self.assertIn("sector_snapshot_confirming", row["why_code"])
 
 
 if __name__ == "__main__":

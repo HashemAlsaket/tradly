@@ -77,9 +77,11 @@ def main() -> int:
     if not isinstance(recommendation_rows, list) or not recommendation_rows:
         print("recommendation_scorecard_v1_failed:recommendation_review_rows_missing")
         return 2
-    cohort_run_timestamp_utc = str(review_payload.get("run_timestamp_utc", "")).strip()
+    cohort_run_timestamp_utc = str(
+        (review_payload.get("input_summary", {}) or {}).get("recommendation_run_timestamp_utc", "")
+    ).strip()
     if not cohort_run_timestamp_utc:
-        print("recommendation_scorecard_v1_failed:recommendation_review_timestamp_missing")
+        print("recommendation_scorecard_v1_failed:recommendation_cohort_timestamp_missing")
         return 3
 
     symbols = sorted(
@@ -106,8 +108,9 @@ def main() -> int:
         "local_timezone": time_ctx.local_timezone,
         "model_id": "recommendation_scorecard_v1",
         "output_schema_version": 1,
-        "cohort_model_id": "recommendation_review_v1",
+        "cohort_model_id": "recommendation_v1",
         "cohort_run_timestamp_utc": cohort_run_timestamp_utc,
+        "review_run_timestamp_utc": str(review_payload.get("run_timestamp_utc", "")),
         "input_summary": {
             "upstream_model": "recommendation_review_v1",
             "recommendation_count": len(recommendation_rows),

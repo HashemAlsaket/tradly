@@ -56,30 +56,86 @@ def _coverage_rank(coverage_state: str) -> int:
     return {"insufficient_evidence": 0, "thin_evidence": 1, "sufficient_evidence": 2}.get(coverage_state, 0)
 
 
-def _regime_alignment(direction: str, why_codes: list[str]) -> str:
+def _evidence_balance_class(direction: str, why_codes: list[str]) -> str:
     normalized_direction = str(direction).strip().lower()
     codes = {str(code).strip() for code in why_codes}
     market_supportive = "market_context_supportive" in codes
     market_headwind = "market_context_headwind" in codes
+    supportive_codes = {
+        "sector_context_supportive",
+        "symbol_news_supports_bullish",
+        "sector_news_supportive",
+        "symbol_movement_supports_bullish",
+    }
+    bearish_codes = {
+        "sector_context_headwind",
+        "symbol_news_supports_bearish",
+        "sector_news_headwind",
+        "symbol_movement_supports_bearish",
+    }
+    penalties = {
+        "component_conflict_high",
+        "range_expanding_conviction_reduced",
+    }
     if normalized_direction == "bullish":
+        positives = sum(1 for code in supportive_codes if code in codes)
+        negatives = sum(1 for code in bearish_codes if code in codes) + sum(1 for code in penalties if code in codes)
+        balance = positives - negatives
         if market_supportive:
-            return "aligned"
+            return "aligned_strong" if balance >= 2 else "aligned_lean"
         if market_headwind:
+            if balance >= 2:
+                return "mixed_strong"
+            if balance >= 0:
+                return "mixed_weak"
             return "contrarian"
+        if balance >= 2:
+            return "aligned_lean"
+        if balance >= 0:
+            return "mixed_weak"
+        return "contrarian"
     if normalized_direction == "bearish":
+        positives = sum(1 for code in bearish_codes if code in codes)
+        negatives = sum(1 for code in supportive_codes if code in codes) + sum(1 for code in penalties if code in codes)
+        balance = positives - negatives
         if market_headwind:
-            return "aligned"
+            return "aligned_strong" if balance >= 2 else "aligned_lean"
         if market_supportive:
+            if balance >= 2:
+                return "mixed_strong"
+            if balance >= 0:
+                return "mixed_weak"
             return "contrarian"
-    return "mixed"
+        if balance >= 2:
+            return "aligned_lean"
+        if balance >= 0:
+            return "mixed_weak"
+        return "contrarian"
+    return "mixed_weak"
 
 
-def _recommendation_class(action: str, *, direction: str, regime_alignment: str) -> str:
+def _regime_alignment(evidence_balance_class: str) -> str:
+    if evidence_balance_class.startswith("aligned_"):
+        return "aligned"
+    if evidence_balance_class.startswith("mixed_"):
+        return "mixed"
+    return evidence_balance_class
+
+
+def _recommendation_class(action: str, *, direction: str, regime_alignment: str, evidence_balance_class: str) -> str:
     normalized_direction = str(direction).strip().lower()
     if action == "Buy":
-        return "aligned_long" if regime_alignment == "aligned" else "contrarian_long" if regime_alignment == "contrarian" else "long"
+        if regime_alignment == "aligned":
+            return "aligned_long"
+        if regime_alignment == "contrarian":
+            return "contrarian_long"
+        return f"{evidence_balance_class}_long" if evidence_balance_class else "long"
     if action == "Sell/Trim":
-        return "aligned_short" if regime_alignment == "aligned" else "contrarian_short" if regime_alignment == "contrarian" else "short"
+        if regime_alignment == "aligned":
+            return "aligned_short"
+        if regime_alignment == "contrarian":
+            return "contrarian_short"
+        return f"{evidence_balance_class}_short" if evidence_balance_class else "short"
     if action in {"Defer Buy", "Defer Trim", "Defer"}:
         if action == "Defer Buy":
             return "deferred_long"
@@ -127,14 +183,21 @@ def build_recommendation_rows(*, ensemble_rows: list[dict], now_utc: datetime) -
         recommended_horizon, horizon_row, action = _best_horizon(summary)
         why_codes = [str(code) for code in horizon_row.get("why_code", []) if str(code).strip()]
         direction = str(horizon_row.get("signal_direction", "neutral")).strip().lower()
-        regime_alignment = _regime_alignment(direction, why_codes)
+        evidence_balance_class = _evidence_balance_class(direction, why_codes)
+        regime_alignment = _regime_alignment(evidence_balance_class)
         recommendations.append(
             {
                 "model_id": "recommendation_v1",
                 "scope_id": scope_id,
                 "recommended_action": action,
                 "recommended_horizon": recommended_horizon,
-                "recommendation_class": _recommendation_class(action, direction=direction, regime_alignment=regime_alignment),
+                "recommendation_class": _recommendation_class(
+                    action,
+                    direction=direction,
+                    regime_alignment=regime_alignment,
+                    evidence_balance_class=evidence_balance_class,
+                ),
+                "evidence_balance_class": evidence_balance_class,
                 "regime_alignment": regime_alignment,
                 "signal_direction": direction,
                 "confidence_score": int(horizon_row.get("confidence_score", row.get("confidence_score", 0)) or 0),

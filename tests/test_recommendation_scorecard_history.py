@@ -57,7 +57,7 @@ class RecommendationScorecardHistoryTests(unittest.TestCase):
 
     def test_history_compatible_requires_review_cohort_and_review_fields(self) -> None:
         good_payload = {
-            "cohort_model_id": "recommendation_review_v1",
+            "cohort_model_id": "recommendation_v1",
             "cohort_run_timestamp_utc": "2026-03-15T20:00:00+00:00",
             "rows": [
                 {
@@ -67,7 +67,7 @@ class RecommendationScorecardHistoryTests(unittest.TestCase):
             ],
         }
         bad_payload = {
-            "cohort_model_id": "recommendation_review_v1",
+            "cohort_model_id": "recommendation_v1",
             "rows": [{}],
         }
         self.assertTrue(_is_history_compatible(good_payload))

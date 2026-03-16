@@ -9,6 +9,9 @@ from tradly.ops.freshness_snapshot import run_and_write_runtime_freshness_snapsh
 from tradly.paths import get_repo_root
 
 
+PREFLIGHT_MODULE = "tradly.ops.preflight_catchup"
+SKIP_PREFLIGHT_ENV = "TRADLY_SKIP_PREFLIGHT_CATCHUP"
+
 STEPS = [
     ("ingest_market_bars", "tradly.pipeline.ingest_market_bars"),
     ("ingest_news_budgeted", "tradly.pipeline.ingest_news_budgeted"),
@@ -28,6 +31,17 @@ STEPS = [
 ]
 
 
+def _run_step(step_name: str, module_name: str, repo_root, env: dict[str, str]) -> int:
+    cmd = [sys.executable, "-m", module_name]
+    print(f"step_start={step_name} cmd={' '.join(cmd)}")
+    result = subprocess.run(cmd, cwd=str(repo_root), env=env)
+    if result.returncode != 0:
+        print(f"step_failed={step_name} exit_code={result.returncode}")
+        return result.returncode
+    print(f"step_ok={step_name}")
+    return 0
+
+
 def main() -> int:
     repo_root = get_repo_root()
     cycle_started_at_utc = datetime.now(timezone.utc)
@@ -35,14 +49,17 @@ def main() -> int:
     existing_pythonpath = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = "src" if not existing_pythonpath else f"src:{existing_pythonpath}"
 
+    if env.get(SKIP_PREFLIGHT_ENV) == "1":
+        print("step_skipped=preflight_catchup reason=env_skip")
+    else:
+        preflight_rc = _run_step("preflight_catchup", PREFLIGHT_MODULE, repo_root, env)
+        if preflight_rc != 0:
+            return preflight_rc
+
     for step_name, module_name in STEPS:
-        cmd = [sys.executable, "-m", module_name]
-        print(f"step_start={step_name} cmd={' '.join(cmd)}")
-        result = subprocess.run(cmd, cwd=str(repo_root), env=env)
-        if result.returncode != 0:
-            print(f"step_failed={step_name} exit_code={result.returncode}")
-            return result.returncode
-        print(f"step_ok={step_name}")
+        step_rc = _run_step(step_name, module_name, repo_root, env)
+        if step_rc != 0:
+            return step_rc
 
     cycle_ended_at_utc = datetime.now(timezone.utc)
     freshness_rc, freshness_out, freshness_err, _ = run_and_write_runtime_freshness_snapshot(

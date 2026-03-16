@@ -5,27 +5,33 @@ Last validated: 2026-03-13 (America/Chicago)
 This file records only API usage patterns that have been executed and verified in this repo.
 
 ## Providers
-- Polygon (market bars)
+- Massive (market bars)
 - Marketaux (news)
 - FRED (macro time series)
 
-## 1) Polygon (Proven)
+## 1) Massive (Implemented, Pending Live Validation For Daily Backfill Path)
 
 ### Endpoint
-- `GET https://api.polygon.io/v2/aggs/ticker/{SYMBOL}/range/1/day/{FROM_DATE}/{TO_DATE}`
+- `GET https://api.massive.com/v2/aggs/ticker/{SYMBOL}/range/1/day/{FROM_DATE}/{TO_DATE}`
 
-### Proven query parameters
+### Implemented query parameters
 - `adjusted=true`
-- `sort=asc` (pipeline ingest) and `sort=desc` (freshness probes)
-- `limit=50000` (pipeline ingest) and `limit=1|3` (freshness probes)
-- `apiKey=<POLYGON_API_KEY>`
+- `sort=asc` (pipeline ingest)
+- `limit=50000` (pipeline ingest)
+- `apiKey=<MASSIVE_API_KEY>`
 
-### Proven response handling
+### Implemented response handling
 - Accept payload status: `OK`, `DELAYED`
 - Read bars from `results[]`
 - Upsert key: `(symbol, timeframe, ts_utc, correction_seq)`
+- Phase-1 daily backfill writes:
+  - `source='massive'`
+  - `data_status='DELAYED'`
+- Phase-1 safety rail:
+  - default mode is validation only
+  - live replacement requires `TRADLY_MARKET_BACKFILL_MODE=cutover`
 
-### Proven recency interpretation
+### Expected recency interpretation
 - Daily bars may appear with UTC timestamps that map to prior/local day boundaries.
 - Recency checks must use market-date logic (America/New_York), not naive local date assumptions.
 
@@ -78,12 +84,13 @@ This file records only API usage patterns that have been executed and verified i
 
 ## 4) Proven env vars used by pipelines
 
-- `POLYGON_API_KEY`
+- `MASSIVE_API_KEY`
 - `MARKETAUX_API_KEY`
 - `FRED_API_KEY`
 - `TRADLY_NEWS_PUBLISHED_AFTER_UTC` (normalized before request)
 - `TRADLY_MARKET_FROM_DATE`
 - `TRADLY_MARKET_TO_DATE`
+- `TRADLY_MARKET_BACKFILL_MODE`
 - `TRADLY_MACRO_FROM_DATE`
 - `TRADLY_MACRO_TO_DATE`
 

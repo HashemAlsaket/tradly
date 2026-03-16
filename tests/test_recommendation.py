@@ -133,7 +133,40 @@ class RecommendationTests(unittest.TestCase):
             ],
             now_utc=datetime(2026, 3, 15, 19, 0, tzinfo=timezone.utc),
         )
-        self.assertEqual(rows[0]["recommendation_class"], "contrarian_long")
+        self.assertEqual(rows[0]["evidence_balance_class"], "mixed_weak")
+        self.assertEqual(rows[0]["regime_alignment"], "mixed")
+        self.assertEqual(rows[0]["recommendation_class"], "mixed_weak_long")
+
+    def test_build_recommendation_rows_marks_multi_confirm_headwind_long_as_mixed_strong(self) -> None:
+        rows = build_recommendation_rows(
+            ensemble_rows=[
+                {
+                    "scope_id": "NVDA",
+                    "confidence_score": 72,
+                    "horizon_summary": {
+                        "1to2w": {
+                            "state": "actionable",
+                            "signal_direction": "bullish",
+                            "confidence_score": 72,
+                            "confidence_label": "high",
+                            "coverage_state": "sufficient_evidence",
+                            "score_normalized": 35.0,
+                            "why_code": [
+                                "market_context_headwind",
+                                "sector_context_supportive",
+                                "symbol_news_supports_bullish",
+                                "sector_news_supportive",
+                            ],
+                            "execution_ready": True,
+                        },
+                    },
+                }
+            ],
+            now_utc=datetime(2026, 3, 15, 19, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(rows[0]["evidence_balance_class"], "mixed_strong")
+        self.assertEqual(rows[0]["regime_alignment"], "mixed")
+        self.assertEqual(rows[0]["recommendation_class"], "mixed_strong_long")
 
 
 if __name__ == "__main__":

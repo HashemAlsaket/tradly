@@ -93,6 +93,44 @@ CREATE TABLE IF NOT EXISTS market_calendar (
   ingested_at_utc TIMESTAMP NOT NULL
 );
 
+-- 5b) Current market snapshots (point-in-time state, not bars)
+CREATE TABLE IF NOT EXISTS market_snapshots (
+  symbol TEXT NOT NULL,
+  as_of_utc TIMESTAMP NOT NULL,
+  calendar_date DATE,
+  day_of_week INTEGER,
+  day_name TEXT,
+  is_weekend BOOLEAN,
+  is_market_holiday BOOLEAN,
+  is_trading_day BOOLEAN,
+  market_calendar_state TEXT,
+  last_cash_session_date DATE,
+  last_trade_price DOUBLE,
+  last_trade_size DOUBLE,
+  last_trade_ts_utc TIMESTAMP,
+  bid_price DOUBLE,
+  bid_size DOUBLE,
+  ask_price DOUBLE,
+  ask_size DOUBLE,
+  last_quote_ts_utc TIMESTAMP,
+  session_open DOUBLE,
+  session_high DOUBLE,
+  session_low DOUBLE,
+  session_close DOUBLE,
+  session_volume DOUBLE,
+  prev_close DOUBLE,
+  change DOUBLE,
+  change_pct DOUBLE,
+  day_vwap DOUBLE,
+  market_status TEXT,
+  data_status TEXT,
+  source TEXT NOT NULL,
+  ingested_at_utc TIMESTAMP NOT NULL,
+  updated_at_utc TIMESTAMP NOT NULL,
+  PRIMARY KEY (symbol, as_of_utc),
+  FOREIGN KEY (symbol) REFERENCES instruments(symbol)
+);
+
 -- 6) Run manifests (one row per decision cycle)
 CREATE TABLE IF NOT EXISTS run_manifests (
   run_id TEXT PRIMARY KEY,

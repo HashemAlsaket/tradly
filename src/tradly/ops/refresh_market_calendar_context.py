@@ -32,6 +32,7 @@ def _as_utc_datetime(value: datetime) -> datetime:
 def _collect_date_bounds(conn) -> tuple[datetime | None, datetime | None]:
     timestamp_queries = [
         "SELECT MIN(ts_utc), MAX(ts_utc) FROM market_bars",
+        "SELECT MIN(as_of_utc), MAX(as_of_utc) FROM market_snapshots",
         "SELECT MIN(published_at_utc), MAX(published_at_utc) FROM news_events",
         "SELECT MIN(interpreted_at_utc), MAX(interpreted_at_utc) FROM news_interpretations",
         "SELECT MIN(ts_utc), MAX(ts_utc) FROM macro_points",
@@ -143,6 +144,26 @@ def _stamp_market_bars(conn) -> None:
     )
 
 
+def _stamp_market_snapshots(conn) -> None:
+    _ensure_table_columns(conn, "market_snapshots")
+    conn.execute(
+        """
+        UPDATE market_snapshots AS t
+        SET
+          calendar_date = mc.calendar_date,
+          day_of_week = mc.day_of_week,
+          day_name = mc.day_name,
+          is_weekend = mc.is_weekend,
+          is_market_holiday = mc.is_market_holiday,
+          is_trading_day = mc.is_trading_day,
+          market_calendar_state = mc.market_calendar_state,
+          last_cash_session_date = mc.last_cash_session_date
+        FROM market_calendar AS mc
+        WHERE mc.calendar_date = DATE(((t.as_of_utc AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York'))
+        """
+    )
+
+
 def _stamp_news_events(conn) -> None:
     _ensure_table_columns(conn, "news_events")
     conn.execute(
@@ -239,6 +260,7 @@ def refresh_market_calendar_context(*, repo_root=None) -> dict:
     try:
         calendar_rows = _upsert_calendar_dimension(conn, now_utc=now_utc)
         _stamp_market_bars(conn)
+        _stamp_market_snapshots(conn)
         _stamp_news_events(conn)
         _stamp_news_interpretations(conn)
         _stamp_news_pull_usage(conn)
@@ -252,6 +274,7 @@ def refresh_market_calendar_context(*, repo_root=None) -> dict:
         "as_of_utc": now_utc.isoformat(),
         "tables_stamped": [
             "market_bars",
+            "market_snapshots",
             "news_events",
             "news_interpretations",
             "news_pull_usage",

@@ -13,7 +13,7 @@ from tradly.models.calibration import (
     confidence_label,
     normalize_score,
 )
-from tradly.models.market_regime import Bar, clamp
+from tradly.models.market_regime import Bar, IntradayBar, SnapshotPoint, clamp
 from tradly.services.db_time import from_db_utc
 from tradly.services.market_calendar import (
     build_trading_calendar_row,
@@ -28,6 +28,8 @@ MARKET_TZ = ZoneInfo("America/New_York")
 MIN_DAILY_BARS = 61
 VALID_DATA_STATUS = {"REALTIME", "DELAYED"}
 RAW_SCORE_SCALE = 140.0
+INTRADAY_OVERLAY_SCALE = 18.0
+SNAPSHOT_ONLY_INDEPENDENCE_THRESHOLD = 0.003
 LANE_TO_HORIZON = {
     "near_term": "1to3d",
     "swing_term": "1to2w",
@@ -116,12 +118,196 @@ def _merge_forced_coverage_state(base_state: str, forced_state: str | None) -> s
     return base_state
 
 
+def _sector_feature_counts(
+    *,
+    relative_r20: float,
+    relative_r60: float,
+    vol20: float,
+    intraday_overlay: dict[str, object],
+) -> tuple[int, int]:
+    informative = 0
+    independent = 0
+
+    daily_signals = 0
+    if abs(relative_r20) >= 0.01:
+        informative += 1
+        daily_signals += 1
+    if abs(relative_r60) >= 0.015:
+        informative += 1
+        daily_signals += 1
+    if daily_signals:
+        independent += 1
+
+    if vol20 >= 0.01:
+        informative += 1
+        independent += 1
+
+    overlay_state = str(intraday_overlay.get("sector_intraday_overlay_state", "")).strip()
+    overlay_freshness = str(intraday_overlay.get("sector_intraday_overlay_freshness", "")).strip()
+    snapshot_change_pct = intraday_overlay.get("proxy_snapshot_change_pct")
+    snapshot_directional = isinstance(snapshot_change_pct, float) and abs(snapshot_change_pct) >= SNAPSHOT_ONLY_INDEPENDENCE_THRESHOLD
+    if overlay_state not in {"", "unavailable", "mixed"}:
+        informative += 1
+        if overlay_freshness == "minute_confirmed":
+            independent += 1
+        elif overlay_freshness == "snapshot_only" and snapshot_directional:
+            independent += 1
+
+    return max(informative, 1), max(independent, 1)
+
+
+def _latest_intraday_return(
+    *,
+    symbol: str,
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]],
+    daily_close: float,
+) -> tuple[float | None, datetime | None]:
+    bars = intraday_bars_by_symbol.get(symbol, [])
+    if not bars or daily_close <= 0:
+        return None, None
+    latest = bars[-1]
+    status = (latest.data_status or "").upper()
+    if status not in VALID_DATA_STATUS:
+        return None, None
+    return latest.close / daily_close - 1.0, latest.ts_utc
+
+
+def _snapshot_change_pct(snapshot: SnapshotPoint | None) -> float | None:
+    if snapshot is None:
+        return None
+    if snapshot.change_pct is not None:
+        return snapshot.change_pct / 100.0
+    if snapshot.last_trade_price is None or snapshot.prev_close is None or snapshot.prev_close <= 0:
+        return None
+    return snapshot.last_trade_price / snapshot.prev_close - 1.0
+
+
+def _intraday_overlay_for_sector(
+    *,
+    sector: str,
+    proxy_symbol: str,
+    broad_proxy_metrics: dict[str, dict[str, float | datetime.date]],
+    latest_close: float,
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]],
+    latest_snapshots_by_symbol: dict[str, SnapshotPoint],
+) -> tuple[dict[str, object], float, list[str]]:
+    proxy_intraday_return_pct, proxy_intraday_ts = _latest_intraday_return(
+        symbol=proxy_symbol,
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_close,
+    )
+    spy_intraday_return_pct, spy_intraday_ts = _latest_intraday_return(
+        symbol="SPY",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=float(broad_proxy_metrics["SPY"]["close"]),
+    ) if "SPY" in broad_proxy_metrics and "close" in broad_proxy_metrics["SPY"] else (None, None)
+    qqq_intraday_return_pct, qqq_intraday_ts = _latest_intraday_return(
+        symbol="QQQ",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=float(broad_proxy_metrics["QQQ"]["close"]),
+    ) if "QQQ" in broad_proxy_metrics and "close" in broad_proxy_metrics["QQQ"] else (None, None)
+
+    proxy_snapshot = latest_snapshots_by_symbol.get(proxy_symbol)
+    proxy_snapshot_change_pct = _snapshot_change_pct(proxy_snapshot)
+    latest_snapshot_ts = (
+        proxy_snapshot.as_of_utc
+        if proxy_snapshot is not None and (proxy_snapshot.data_status or "").upper() in VALID_DATA_STATUS
+        else None
+    )
+    latest_intraday_ts = max(
+        (ts for ts in (proxy_intraday_ts, spy_intraday_ts, qqq_intraday_ts) if ts is not None),
+        default=None,
+    )
+
+    has_intraday = any(isinstance(v, float) for v in (proxy_intraday_return_pct, spy_intraday_return_pct, qqq_intraday_return_pct))
+    has_snapshot = isinstance(proxy_snapshot_change_pct, float)
+    if not has_intraday and not has_snapshot:
+        return (
+            {
+                "sector_intraday_overlay_state": "unavailable",
+                "sector_intraday_overlay_freshness": "unavailable",
+                "latest_intraday_ts_utc": None,
+                "latest_snapshot_ts_utc": None,
+                "proxy_intraday_return_pct": None,
+                "broad_proxy_intraday_avg_pct": None,
+                "proxy_snapshot_change_pct": None,
+                "relative_intraday_strength_pct": None,
+            },
+            0.0,
+            ["sector_intraday_overlay_unavailable"],
+        )
+
+    freshness = "minute_confirmed" if has_intraday else "snapshot_only"
+    broad_intraday_values = [v for v in (spy_intraday_return_pct, qqq_intraday_return_pct) if isinstance(v, float)]
+    broad_intraday_avg_pct = sum(broad_intraday_values) / len(broad_intraday_values) if broad_intraday_values else None
+    relative_intraday_strength_pct = (
+        proxy_intraday_return_pct - broad_intraday_avg_pct
+        if isinstance(proxy_intraday_return_pct, float) and isinstance(broad_intraday_avg_pct, float)
+        else None
+    )
+
+    score = 0.0
+    why_code: list[str] = []
+    if isinstance(relative_intraday_strength_pct, float):
+        if relative_intraday_strength_pct > 0.003:
+            score += INTRADAY_OVERLAY_SCALE
+            why_code.append("sector_intraday_confirming")
+        elif relative_intraday_strength_pct < -0.003:
+            score -= INTRADAY_OVERLAY_SCALE
+            why_code.append("sector_intraday_fading")
+        else:
+            why_code.append("sector_intraday_mixed")
+    elif isinstance(proxy_snapshot_change_pct, float):
+        if proxy_snapshot_change_pct > 0.0:
+            score += INTRADAY_OVERLAY_SCALE * 0.5
+            why_code.append("sector_snapshot_confirming")
+        elif proxy_snapshot_change_pct < 0.0:
+            score -= INTRADAY_OVERLAY_SCALE * 0.5
+            why_code.append("sector_snapshot_fading")
+        else:
+            why_code.append("sector_intraday_mixed")
+
+    if score > 0:
+        state = "supportive"
+    elif score < 0:
+        state = "risk_off"
+    else:
+        state = "mixed"
+
+    return (
+        {
+            "sector_intraday_overlay_state": state,
+            "sector_intraday_overlay_freshness": freshness,
+            "latest_intraday_ts_utc": from_db_utc(latest_intraday_ts).isoformat() if latest_intraday_ts else None,
+            "latest_snapshot_ts_utc": from_db_utc(latest_snapshot_ts).isoformat() if latest_snapshot_ts else None,
+            "proxy_intraday_return_pct": round(float(proxy_intraday_return_pct), 6)
+            if isinstance(proxy_intraday_return_pct, float)
+            else None,
+            "broad_proxy_intraday_avg_pct": round(float(broad_intraday_avg_pct), 6)
+            if isinstance(broad_intraday_avg_pct, float)
+            else None,
+            "proxy_snapshot_change_pct": round(float(proxy_snapshot_change_pct), 6)
+            if isinstance(proxy_snapshot_change_pct, float)
+            else None,
+            "relative_intraday_strength_pct": round(float(relative_intraday_strength_pct), 6)
+            if isinstance(relative_intraday_strength_pct, float)
+            else None,
+        },
+        score,
+        why_code,
+    )
+
+
 def build_sector_movement_rows(
     *,
     bars_by_symbol: dict[str, list[Bar]],
     now_utc: datetime,
     sector_members: dict[str, list[str]],
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]] | None = None,
+    latest_snapshots_by_symbol: dict[str, SnapshotPoint] | None = None,
 ) -> list[dict]:
+    intraday_bars_by_symbol = intraday_bars_by_symbol or {}
+    latest_snapshots_by_symbol = latest_snapshots_by_symbol or {}
     rows: list[dict] = []
 
     broad_proxy_metrics: dict[str, dict[str, float | datetime.date]] = {}
@@ -140,6 +326,7 @@ def build_sector_movement_rows(
             "r20": _r20(closes),
             "r60": _r60(closes),
             "latest_market_date": _market_date_from_db_ts(latest.ts_utc),
+            "close": closes[-1],
         }
 
     expected_min_market_date = previous_trading_day(now_utc.astimezone(MARKET_TZ).date())
@@ -210,7 +397,20 @@ def build_sector_movement_rows(
         returns_20 = _returns(closes[-21:])
         vol20 = pstdev(returns_20) if len(returns_20) >= 2 else 0.0
 
-        raw_score = relative_r20 * 900.0 + relative_r60 * 450.0 - max(0.0, vol20 - 0.02) * 500.0
+        intraday_overlay, intraday_overlay_score, intraday_overlay_why_code = _intraday_overlay_for_sector(
+            sector=sector,
+            proxy_symbol=proxy_symbol,
+            broad_proxy_metrics=broad_proxy_metrics,
+            latest_close=closes[-1],
+            intraday_bars_by_symbol=intraday_bars_by_symbol,
+            latest_snapshots_by_symbol=latest_snapshots_by_symbol,
+        )
+        raw_score = (
+            relative_r20 * 900.0
+            + relative_r60 * 450.0
+            - max(0.0, vol20 - 0.02) * 500.0
+            + intraday_overlay_score
+        )
         score_normalized = normalize_score(score_raw=raw_score, raw_scale=RAW_SCORE_SCALE)
         signal_strength = round(abs(score_normalized) / 100.0, 4)
 
@@ -228,6 +428,9 @@ def build_sector_movement_rows(
             why_code.append("sector_outperforming_20d")
         elif r20 < broad_r20_avg:
             why_code.append("sector_underperforming_20d")
+        for code in intraday_overlay_why_code:
+            if code not in why_code:
+                why_code.append(code)
 
         if not sector_proxy_valid:
             why_code.append("sector_proxy_invalid_status")
@@ -247,6 +450,12 @@ def build_sector_movement_rows(
         neg = sum(1 for sign in feature_signs if sign < 0)
         feature_agreement_score = round((max(pos, neg) / (pos + neg)) * 100) if (pos + neg) else 0
         stability_score = round(clamp(100.0 - vol20 * 1500.0, 20.0, 100.0))
+        informative_feature_count, independent_informative_feature_count = _sector_feature_counts(
+            relative_r20=relative_r20,
+            relative_r60=relative_r60,
+            vol20=vol20,
+            intraday_overlay=intraday_overlay,
+        )
 
         base_coverage_state = (
             "insufficient_evidence"
@@ -294,8 +503,8 @@ def build_sector_movement_rows(
                     coverage_score=coverage_score,
                     coverage_state=coverage_state,
                     signal_strength=signal_strength,
-                    informative_feature_count=2,
-                    independent_informative_feature_count=2,
+                    informative_feature_count=informative_feature_count,
+                    independent_informative_feature_count=independent_informative_feature_count,
                 ),
                 assessment=assessment,
             )
@@ -394,6 +603,8 @@ def build_sector_movement_rows(
                 "relative_r20": round(relative_r20, 6),
                 "relative_r60": round(relative_r60, 6),
                 "vol20": round(vol20, 6),
+                "intraday_overlay_score": round(intraday_overlay_score, 4),
+                "intraday_overlay": intraday_overlay,
                 "evidence_density_score": evidence_density_score,
                 "feature_agreement_score": feature_agreement_score,
                 "freshness_score": freshness_score,
@@ -436,14 +647,14 @@ def build_sector_movement_rows(
                         "coverage_score": coverage_score,
                         "coverage_state": coverage_state,
                         "signal_strength": signal_strength,
-                        "informative_feature_count": 2,
-                        "independent_informative_feature_count": 2,
+                        "informative_feature_count": informative_feature_count,
+                        "independent_informative_feature_count": independent_informative_feature_count,
                     },
                     "cap_reasons": _confidence_cap_reasons(
                         coverage_state=coverage_state,
                         signal_strength=signal_strength,
-                        informative_feature_count=2,
-                        independent_informative_feature_count=2,
+                        informative_feature_count=informative_feature_count,
+                        independent_informative_feature_count=independent_informative_feature_count,
                         latency_confidence_cap=latency_details.get("confidence_cap"),
                     ),
                     "audit_flags": {

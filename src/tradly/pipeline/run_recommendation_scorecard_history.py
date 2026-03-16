@@ -18,7 +18,7 @@ def _load_json(path: Path) -> dict:
 def _is_history_compatible(payload: dict) -> bool:
     if not isinstance(payload, dict):
         return False
-    if str(payload.get("cohort_model_id", "")).strip() != "recommendation_review_v1":
+    if str(payload.get("cohort_model_id", "")).strip() != "recommendation_v1":
         return False
     if not str(payload.get("cohort_run_timestamp_utc", "")).strip():
         return False

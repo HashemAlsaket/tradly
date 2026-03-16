@@ -19,6 +19,8 @@ from tradly.services.time_context import get_time_context
 MARKET_OPEN_CT = time(8, 30)
 MARKET_CLOSE_CT = time(15, 0)
 MARKET_TZ = ZoneInfo("America/New_York")
+PREMARKET_OPEN_ET = time(4, 0)
+AFTER_HOURS_CLOSE_ET = time(20, 0)
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,29 @@ def _market_date_from_db_ts(ts: datetime) -> date:
 
 def _check_status_map(checks: list[FreshnessCheck]) -> dict[str, str]:
     return {check.name: check.status for check in checks}
+
+
+def _session_requires_intraday(*, now_utc: datetime, market_session: str) -> bool:
+    if market_session in {"weekend", "holiday"}:
+        return False
+    now_et = now_utc.astimezone(MARKET_TZ)
+    current_time = now_et.time()
+    return PREMARKET_OPEN_ET <= current_time <= AFTER_HOURS_CLOSE_ET
+
+
+def _intraday_source_status(
+    *,
+    latest_ts: datetime | None,
+    now_utc: datetime,
+    market_session: str,
+    max_age_sec: int,
+) -> tuple[str, int | None]:
+    if not _session_requires_intraday(now_utc=now_utc, market_session=market_session):
+        return "not_required", None
+    age_sec = _age_seconds_from_db_ts(latest_ts, now_utc)
+    if age_sec is None:
+        return "missing", None
+    return ("fresh", age_sec) if age_sec <= max_age_sec else ("stale", age_sec)
 
 
 def _medium_horizon_thesis_usable(
@@ -122,6 +147,12 @@ def main() -> int:
     try:
         latest_daily_bar_utc = conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1d'"
+        ).fetchone()[0]
+        latest_intraday_bar_utc = conn.execute(
+            "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1m'"
+        ).fetchone()[0]
+        latest_snapshot_utc = conn.execute(
+            "SELECT MAX(as_of_utc) FROM market_snapshots"
         ).fetchone()[0]
         latest_news_pull_utc = conn.execute(
             """
@@ -278,6 +309,57 @@ def main() -> int:
             )
         )
 
+    intraday_bar_max_age_sec = int(os.getenv("TRADLY_1M_MAX_AGE_SEC_ACTIVE_SESSION", "1200"))
+    snapshot_max_age_sec = int(os.getenv("TRADLY_SNAPSHOT_MAX_AGE_SEC_ACTIVE_SESSION", "1200"))
+
+    intraday_bar_status, intraday_bar_age_sec = _intraday_source_status(
+        latest_ts=latest_intraday_bar_utc,
+        now_utc=now_utc,
+        market_session=market_session,
+        max_age_sec=intraday_bar_max_age_sec,
+    )
+    snapshot_status, snapshot_age_sec = _intraday_source_status(
+        latest_ts=latest_snapshot_utc,
+        now_utc=now_utc,
+        market_session=market_session,
+        max_age_sec=snapshot_max_age_sec,
+    )
+    checks.append(
+        FreshnessCheck(
+            "market_intraday_bar_recency",
+            "PASS" if intraday_bar_status in {"fresh", "not_required"} else "FAIL",
+            (
+                f"status={intraday_bar_status} age_sec={intraday_bar_age_sec} "
+                f"max_age_sec={intraday_bar_max_age_sec} market_session={market_session}"
+            ),
+        )
+    )
+    checks.append(
+        FreshnessCheck(
+            "market_snapshot_recency",
+            "PASS" if snapshot_status in {"fresh", "not_required"} else "FAIL",
+            (
+                f"status={snapshot_status} age_sec={snapshot_age_sec} "
+                f"max_age_sec={snapshot_max_age_sec} market_session={market_session}"
+            ),
+        )
+    )
+    short_horizon_data_ready = (
+        not _session_requires_intraday(now_utc=now_utc, market_session=market_session)
+        or intraday_bar_status == "fresh"
+        or snapshot_status == "fresh"
+    )
+    checks.append(
+        FreshnessCheck(
+            "short_horizon_data_recency",
+            "PASS" if short_horizon_data_ready else "FAIL",
+            (
+                f"intraday_bar_status={intraday_bar_status} "
+                f"snapshot_status={snapshot_status} market_session={market_session}"
+            ),
+        )
+    )
+
     failed = [c for c in checks if c.status != "PASS"]
     medium_horizon_thesis_usable = _medium_horizon_thesis_usable(
         market_bar_status=market_bar_status,
@@ -298,6 +380,10 @@ def main() -> int:
             "latest_daily_bar_market_date": latest_daily_bar_market_date.isoformat() if latest_daily_bar_market_date else None,
             "expected_min_market_date": expected_min_market_date.isoformat(),
             "market_bar_status": market_bar_status,
+            "latest_intraday_bar_utc": from_db_utc(latest_intraday_bar_utc).isoformat() if latest_intraday_bar_utc else None,
+            "intraday_bar_status": intraday_bar_status,
+            "latest_snapshot_utc": from_db_utc(latest_snapshot_utc).isoformat() if latest_snapshot_utc else None,
+            "snapshot_status": snapshot_status,
             "latest_news_pull_utc": from_db_utc(latest_news_pull_utc).isoformat() if latest_news_pull_utc else None,
             "latest_interp_utc": from_db_utc(latest_interp_utc).isoformat() if latest_interp_utc else None,
             "success_news_pulls_today": success_news_pulls_today,
@@ -308,9 +394,14 @@ def main() -> int:
             "is_market_holiday": calendar_row.is_market_holiday,
             "is_weekend": calendar_row.is_weekend,
             "is_trading_day": calendar_row.is_trading_day,
+            "market_session_state": market_session,
             "last_cash_session_date": calendar_row.last_cash_session_date.isoformat(),
             "next_cash_session_date": calendar_row.next_cash_session_date.isoformat(),
-            "short_horizon_execution_ready": market_session in {"pre_market", "market_hours", "after_hours"},
+            "short_horizon_execution_ready": (
+                _session_requires_intraday(now_utc=now_utc, market_session=market_session)
+                and market_bar_status == "current_for_calendar"
+                and short_horizon_data_ready
+            ),
             "medium_horizon_thesis_usable": medium_horizon_thesis_usable,
         },
         "checks": [asdict(c) for c in checks],

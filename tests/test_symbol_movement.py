@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from tradly.models.market_regime import Bar
+from tradly.models.market_regime import Bar, IntradayBar, SnapshotPoint
 from tradly.models.symbol_movement import build_symbol_movement_rows
 
 
@@ -33,6 +33,21 @@ def _make_position_bars(*, close_start: float, early_step: float, late_step: flo
             Bar(
                 ts_utc=start + timedelta(days=idx),
                 close=close,
+                volume=volume,
+                data_status=status,
+            )
+        )
+    return bars
+
+
+def _make_intraday_bars(*, close_start: float, step: float, volume: float = 25_000.0, status: str = "DELAYED") -> list[IntradayBar]:
+    start = datetime(2026, 3, 16, 9, 30, tzinfo=timezone.utc)
+    bars: list[IntradayBar] = []
+    for idx in range(5):
+        bars.append(
+            IntradayBar(
+                ts_utc=start + timedelta(minutes=idx),
+                close=close_start + step * idx,
                 volume=volume,
                 data_status=status,
             )
@@ -110,6 +125,7 @@ class SymbolMovementTests(unittest.TestCase):
         self.assertIn("confidence_inputs", row["diagnostics"])
         self.assertTrue(row["diagnostics"]["overlay_alignment"]["market_overlay_fresh"])
         self.assertEqual(row["diagnostics"]["overlay_alignment"]["market_overlay_lane_id"], "near_term")
+        self.assertEqual(row["evidence"]["intraday_overlay"]["symbol_intraday_overlay_state"], "unavailable")
 
     def test_etf_symbol_does_not_require_sector_overlay(self) -> None:
         now_utc = datetime(2026, 3, 2, 20, 0, tzinfo=timezone.utc)
@@ -410,6 +426,152 @@ class SymbolMovementTests(unittest.TestCase):
         self.assertEqual(row["diagnostics"]["overlay_alignment"]["sector_overlay_lane_id"], "position_term")
         self.assertEqual(row["coverage_state"], "sufficient_evidence")
         self.assertGreaterEqual(row["confidence_score"], 50)
+
+    def test_symbol_intraday_overlay_can_confirm_bullish_setup(self) -> None:
+        now_utc = datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc)
+        rows = build_symbol_movement_rows(
+            bars_by_symbol={"AAPL": _make_bars(close_start=180.0, step=1.0)},
+            intraday_bars_by_symbol={
+                "AAPL": _make_intraday_bars(close_start=241.0, step=0.4),
+                "SPY": _make_intraday_bars(close_start=529.0, step=0.05),
+            },
+            latest_snapshots_by_symbol={},
+            symbol_metadata={"AAPL": {"asset_type": "stock", "sector": "Technology"}},
+            market_regime_row={
+                "signal_direction": "bullish",
+                "score_normalized": 20.0,
+                "confidence_score": 80,
+                "coverage_state": "sufficient_evidence",
+                "lane_diagnostics": {
+                    "near_term": {"confidence_score": 80, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                    "swing_term": {"confidence_score": 78, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                    "position_term": {"confidence_score": 84, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                },
+                "evidence": {"spy_r20": 0.02, "spy_latest_close": 528.0},
+            },
+            sector_rows_by_scope={},
+            model_symbols=["AAPL"],
+            now_utc=now_utc,
+            market_overlay_fresh=True,
+            sector_overlay_fresh=True,
+        )
+        row = rows[0]
+        overlay = row["evidence"]["intraday_overlay"]
+        self.assertEqual(overlay["symbol_intraday_overlay_state"], "confirming")
+        self.assertEqual(overlay["symbol_intraday_overlay_freshness"], "minute_confirmed")
+        self.assertIn("symbol_intraday_confirming", row["why_code"])
+
+    def test_symbol_intraday_overlay_can_fade_bullish_setup(self) -> None:
+        now_utc = datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc)
+        rows = build_symbol_movement_rows(
+            bars_by_symbol={"AAPL": _make_bars(close_start=180.0, step=1.0)},
+            intraday_bars_by_symbol={
+                "AAPL": _make_intraday_bars(close_start=239.0, step=-0.5),
+                "SPY": _make_intraday_bars(close_start=529.0, step=0.05),
+            },
+            latest_snapshots_by_symbol={},
+            symbol_metadata={"AAPL": {"asset_type": "stock", "sector": "Technology"}},
+            market_regime_row={
+                "signal_direction": "bullish",
+                "score_normalized": 20.0,
+                "confidence_score": 80,
+                "coverage_state": "sufficient_evidence",
+                "lane_diagnostics": {
+                    "near_term": {"confidence_score": 80, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                    "swing_term": {"confidence_score": 78, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                    "position_term": {"confidence_score": 84, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                },
+                "evidence": {"spy_r20": 0.02, "spy_latest_close": 528.0},
+            },
+            sector_rows_by_scope={},
+            model_symbols=["AAPL"],
+            now_utc=now_utc,
+            market_overlay_fresh=True,
+            sector_overlay_fresh=True,
+        )
+        row = rows[0]
+        overlay = row["evidence"]["intraday_overlay"]
+        self.assertEqual(overlay["symbol_intraday_overlay_state"], "fading")
+        self.assertIn("symbol_intraday_fading", row["why_code"])
+
+    def test_symbol_intraday_overlay_snapshot_only(self) -> None:
+        now_utc = datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc)
+        rows = build_symbol_movement_rows(
+            bars_by_symbol={"AAPL": _make_bars(close_start=180.0, step=1.0)},
+            intraday_bars_by_symbol={},
+            latest_snapshots_by_symbol={
+                "AAPL": SnapshotPoint(
+                    as_of_utc=datetime(2026, 3, 16, 10, 0, tzinfo=timezone.utc),
+                    last_trade_price=242.0,
+                    prev_close=240.0,
+                    change_pct=0.83,
+                    day_vwap=None,
+                    market_status="open",
+                    data_status="REALTIME",
+                )
+            },
+            symbol_metadata={"AAPL": {"asset_type": "stock", "sector": "Technology"}},
+            market_regime_row={
+                "signal_direction": "bullish",
+                "score_normalized": 20.0,
+                "confidence_score": 80,
+                "coverage_state": "sufficient_evidence",
+                "lane_diagnostics": {
+                    "near_term": {"confidence_score": 80, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                    "swing_term": {"confidence_score": 78, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                    "position_term": {"confidence_score": 84, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                },
+                "evidence": {"spy_r20": 0.02, "spy_latest_close": 528.0},
+            },
+            sector_rows_by_scope={},
+            model_symbols=["AAPL"],
+            now_utc=now_utc,
+            market_overlay_fresh=True,
+            sector_overlay_fresh=True,
+        )
+        overlay = rows[0]["evidence"]["intraday_overlay"]
+        self.assertEqual(overlay["symbol_intraday_overlay_freshness"], "snapshot_only")
+
+    def test_symbol_intraday_overlay_flags_sector_and_market_lag(self) -> None:
+        now_utc = datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc)
+        rows = build_symbol_movement_rows(
+            bars_by_symbol={"AAPL": _make_bars(close_start=180.0, step=1.0)},
+            intraday_bars_by_symbol={
+                "AAPL": _make_intraday_bars(close_start=239.0, step=-0.3),
+                "SPY": _make_intraday_bars(close_start=529.0, step=0.2),
+            },
+            latest_snapshots_by_symbol={},
+            symbol_metadata={"AAPL": {"asset_type": "stock", "sector": "Technology"}},
+            market_regime_row={
+                "signal_direction": "bullish",
+                "score_normalized": 20.0,
+                "confidence_score": 80,
+                "coverage_state": "sufficient_evidence",
+                "lane_diagnostics": {
+                    "near_term": {"confidence_score": 80, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                    "swing_term": {"confidence_score": 78, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                    "position_term": {"confidence_score": 84, "coverage_state": "sufficient_evidence", "lane_data_freshness_ok": True},
+                },
+                "evidence": {"spy_r20": 0.02, "spy_latest_close": 528.0},
+            },
+            sector_rows_by_scope={
+                "Technology": {
+                    "evidence": {
+                        "intraday_overlay": {
+                            "proxy_intraday_return_pct": 0.01,
+                            "proxy_snapshot_change_pct": 0.01,
+                        }
+                    }
+                }
+            },
+            model_symbols=["AAPL"],
+            now_utc=now_utc,
+            market_overlay_fresh=True,
+            sector_overlay_fresh=True,
+        )
+        row = rows[0]
+        self.assertIn("symbol_lagging_sector_intraday", row["why_code"])
+        self.assertIn("symbol_lagging_market_intraday", row["why_code"])
 
 
 if __name__ == "__main__":

@@ -71,7 +71,7 @@ class DashboardStateTests(unittest.TestCase):
         self.assertEqual(reasons, [])
         self.assertEqual(warnings, [])
 
-    def test_blocks_when_freshness_snapshot_is_older_than_latest_model_run(self) -> None:
+    def test_research_only_when_freshness_snapshot_is_older_than_latest_model_run(self) -> None:
         kwargs = self._base_kwargs()
         kwargs["freshness_snapshot"] = {
             "overall_status": "PASS",
@@ -79,9 +79,9 @@ class DashboardStateTests(unittest.TestCase):
         }
         state, reasons, warnings = _compute_system_state(**kwargs)
 
-        self.assertEqual(state, "blocked")
-        self.assertIn("freshness_snapshot_outdated_for_latest_model_runs", reasons)
-        self.assertEqual(warnings, [])
+        self.assertEqual(state, "research_only")
+        self.assertEqual(reasons, [])
+        self.assertIn("freshness_snapshot_outdated_for_latest_model_runs", warnings)
 
     def test_research_only_when_ensemble_or_news_inputs_are_thin(self) -> None:
         kwargs = self._base_kwargs()
@@ -92,34 +92,34 @@ class DashboardStateTests(unittest.TestCase):
         self.assertEqual(reasons, [])
         self.assertIn("ensemble_thin_evidence", warnings)
 
-    def test_blocks_when_symbol_or_sector_news_rows_are_missing(self) -> None:
+    def test_research_only_when_symbol_or_sector_news_rows_are_missing(self) -> None:
         kwargs = self._base_kwargs()
         kwargs["symbol_news_payload"]["rows"] = []
         kwargs["sector_news_payload"]["rows"] = []
         state, reasons, warnings = _compute_system_state(**kwargs)
 
-        self.assertEqual(state, "blocked")
-        self.assertIn("symbol_news_missing", reasons)
-        self.assertIn("sector_news_missing", reasons)
-        self.assertEqual(warnings, [])
+        self.assertEqual(state, "research_only")
+        self.assertEqual(reasons, [])
+        self.assertIn("symbol_news_missing", warnings)
+        self.assertIn("sector_news_missing", warnings)
 
-    def test_blocks_when_recommendation_rows_are_missing(self) -> None:
+    def test_research_only_when_recommendation_rows_are_missing(self) -> None:
         kwargs = self._base_kwargs()
         kwargs["recommendation_payload"]["rows"] = []
         state, reasons, warnings = _compute_system_state(**kwargs)
 
-        self.assertEqual(state, "blocked")
-        self.assertIn("recommendation_missing", reasons)
-        self.assertEqual(warnings, [])
+        self.assertEqual(state, "research_only")
+        self.assertEqual(reasons, [])
+        self.assertIn("recommendation_missing", warnings)
 
-    def test_blocks_when_review_rows_are_missing(self) -> None:
+    def test_research_only_when_review_rows_are_missing(self) -> None:
         kwargs = self._base_kwargs()
         kwargs["review_payload"]["rows"] = []
         state, reasons, warnings = _compute_system_state(**kwargs)
 
-        self.assertEqual(state, "blocked")
-        self.assertIn("recommendation_review_missing", reasons)
-        self.assertEqual(warnings, [])
+        self.assertEqual(state, "research_only")
+        self.assertEqual(reasons, [])
+        self.assertIn("recommendation_review_missing", warnings)
 
 
 if __name__ == "__main__":
