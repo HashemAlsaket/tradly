@@ -1,0 +1,380 @@
+from __future__ import annotations
+
+import unittest
+from datetime import datetime, timedelta, timezone
+
+from tradly.models.calibration import (
+    ConfidenceInputs,
+    assess_latency,
+    audit_model_artifact,
+    compute_confidence,
+    normalize_score,
+)
+from tradly.models.market_regime import (
+    Bar,
+    CORE_REGIME_SYMBOLS,
+    IntradayBar,
+    SnapshotPoint,
+    build_market_regime_row,
+)
+
+
+def _make_bars(*, close_start: float, step: float, status: str = "DELAYED") -> list[Bar]:
+    start = datetime(2026, 1, 1, 4, 0, tzinfo=timezone.utc)
+    bars: list[Bar] = []
+    for idx in range(61):
+        bars.append(
+            Bar(
+                ts_utc=start + timedelta(days=idx),
+                close=close_start + step * idx,
+                volume=1_000_000.0,
+                data_status=status,
+            )
+        )
+    return bars
+
+
+def _make_intraday_bars(*, close_start: float, step: float, status: str = "DELAYED") -> list[IntradayBar]:
+    start = datetime(2026, 3, 16, 9, 30, tzinfo=timezone.utc)
+    bars: list[IntradayBar] = []
+    for idx in range(5):
+        bars.append(
+            IntradayBar(
+                ts_utc=start + timedelta(minutes=idx),
+                close=close_start + step * idx,
+                volume=25_000.0,
+                data_status=status,
+            )
+        )
+    return bars
+
+
+class CalibrationAndMarketRegimeTests(unittest.TestCase):
+    def test_normalize_score_is_bounded_and_monotonic(self) -> None:
+        low = normalize_score(score_raw=-1.0, raw_scale=2.0)
+        mid = normalize_score(score_raw=0.0, raw_scale=2.0)
+        high = normalize_score(score_raw=1.0, raw_scale=2.0)
+
+        self.assertGreaterEqual(low, -100.0)
+        self.assertLessEqual(high, 100.0)
+        self.assertLess(low, mid)
+        self.assertLess(mid, high)
+
+    def test_assess_latency_stale_forces_thin_evidence_and_confidence_cap(self) -> None:
+        assessment = assess_latency(data_status="DELAYED", recency_ok=False, horizon="1to3d")
+
+        self.assertEqual(assessment.latency_class, "stale")
+        self.assertEqual(assessment.freshness_cap, 60)
+        self.assertEqual(assessment.confidence_cap, 49)
+        self.assertEqual(assessment.forced_coverage_state, "thin_evidence")
+
+    def test_compute_confidence_weak_signal_caps_are_monotonic(self) -> None:
+        def _confidence(signal_strength: float) -> int:
+            return compute_confidence(
+                ConfidenceInputs(
+                    evidence_density_score=100,
+                    feature_agreement_score=100,
+                    freshness_score=85,
+                    stability_score=90,
+                    coverage_score=100,
+                    coverage_state="sufficient_evidence",
+                    signal_strength=signal_strength,
+                    informative_feature_count=3,
+                    independent_informative_feature_count=3,
+                )
+            )
+
+        very_weak = _confidence(0.03)
+        weak = _confidence(0.08)
+        modest = _confidence(0.12)
+        strong = _confidence(0.25)
+
+        self.assertLessEqual(very_weak, weak)
+        self.assertLessEqual(weak, modest)
+        self.assertLessEqual(modest, strong)
+
+    def test_audit_model_artifact_accepts_list_data_status_shape(self) -> None:
+        audit = audit_model_artifact(
+            [
+                {
+                    "score_normalized": 20.0,
+                    "confidence_score": 60,
+                    "signal_direction": "bullish",
+                    "coverage_state": "sufficient_evidence",
+                    "horizon_primary": "1to3d",
+                    "why_code": ["market_data_delayed_15m"],
+                    "evidence": {
+                        "data_status": ["DELAYED"],
+                        "market_data_latency_minutes": 15,
+                        "latency_class": "delayed_material",
+                    },
+                }
+            ]
+        )
+
+        self.assertEqual(audit.status, "pass")
+        self.assertNotIn("delayed_data_missing_latency_metadata", audit.failure_reasons)
+
+    def test_market_regime_row_emits_shared_latency_fields(self) -> None:
+        bars_by_symbol = {
+            "SPY": _make_bars(close_start=500.0, step=-1.0),
+            "QQQ": _make_bars(close_start=400.0, step=-0.5),
+            "VIXY": _make_bars(close_start=25.0, step=0.15),
+            "TLT": _make_bars(close_start=100.0, step=-0.2),
+            "IEF": _make_bars(close_start=95.0, step=-0.1),
+            "SHY": _make_bars(close_start=82.0, step=-0.02),
+        }
+        now_utc = datetime(2026, 3, 2, 20, 0, tzinfo=timezone.utc)
+
+        row = build_market_regime_row(
+            bars_by_symbol=bars_by_symbol,
+            now_utc=now_utc,
+            latest_macro_ts_utc=datetime(2026, 3, 12, 0, 0, tzinfo=timezone.utc),
+            latest_macro_news_ts_utc=datetime(2026, 3, 14, 18, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(row["model_id"], "market_regime_v1")
+        self.assertEqual(row["model_scope"], "market")
+        self.assertIn("market_data_delayed_15m", row["why_code"])
+        self.assertEqual(row["evidence"]["market_data_latency_minutes"], 15)
+        self.assertEqual(row["evidence"]["latency_class"], "delayed_material")
+        self.assertEqual(row["evidence"]["freshness_score"], 70)
+        self.assertNotIn("quality_audit", row["evidence"])
+        self.assertEqual(set(CORE_REGIME_SYMBOLS), set(row["evidence"]["required_symbols"]))
+        self.assertEqual(row["evidence"]["intraday_overlay"]["intraday_overlay_state"], "unavailable")
+        self.assertEqual(row["evidence"]["intraday_overlay"]["intraday_overlay_freshness"], "unavailable")
+        self.assertEqual(row["evidence"]["macro_hostility"]["macro_state"], "macro_unstable")
+
+    def test_market_regime_macro_warning_hits_near_term_harder_than_swing_term(self) -> None:
+        bars_by_symbol = {
+            "SPY": _make_bars(close_start=500.0, step=-1.0),
+            "QQQ": _make_bars(close_start=400.0, step=-0.5),
+            "VIXY": _make_bars(close_start=25.0, step=0.15),
+            "TLT": _make_bars(close_start=100.0, step=-0.2),
+            "IEF": _make_bars(close_start=95.0, step=-0.1),
+            "SHY": _make_bars(close_start=82.0, step=-0.02),
+        }
+        now_utc = datetime(2026, 3, 3, 3, 46, tzinfo=timezone.utc)
+
+        row = build_market_regime_row(
+            bars_by_symbol=bars_by_symbol,
+            now_utc=now_utc,
+            latest_macro_ts_utc=datetime(2026, 2, 28, 0, 0, tzinfo=timezone.utc),
+            latest_macro_news_ts_utc=datetime(2026, 3, 2, 18, 0, tzinfo=timezone.utc),
+        )
+
+        near_term = row["lane_diagnostics"]["near_term"]
+        swing_term = row["lane_diagnostics"]["swing_term"]
+
+        self.assertEqual(near_term["coverage_state"], "thin_evidence")
+        self.assertEqual(near_term["confidence_score"], 49)
+        self.assertEqual(swing_term["coverage_state"], "sufficient_evidence")
+        self.assertGreater(swing_term["confidence_score"], near_term["confidence_score"])
+        self.assertEqual(row["lane_primary"], "swing_term")
+        self.assertEqual(row["horizon_primary"], "1to2w")
+
+    def test_market_regime_emits_position_term_with_slower_macro_tolerance(self) -> None:
+        bars_by_symbol = {
+            "SPY": _make_bars(close_start=500.0, step=-1.0),
+            "QQQ": _make_bars(close_start=400.0, step=-0.5),
+            "VIXY": _make_bars(close_start=25.0, step=0.15),
+            "TLT": _make_bars(close_start=100.0, step=-0.2),
+            "IEF": _make_bars(close_start=95.0, step=-0.1),
+            "SHY": _make_bars(close_start=82.0, step=-0.02),
+        }
+        now_utc = datetime(2026, 3, 3, 3, 46, tzinfo=timezone.utc)
+
+        row = build_market_regime_row(
+            bars_by_symbol=bars_by_symbol,
+            now_utc=now_utc,
+            latest_macro_ts_utc=datetime(2026, 2, 28, 0, 0, tzinfo=timezone.utc),
+            latest_macro_news_ts_utc=datetime(2026, 2, 27, 18, 0, tzinfo=timezone.utc),
+        )
+
+        position_term = row["lane_diagnostics"]["position_term"]
+        self.assertIn("position_term", row["lane_diagnostics"])
+        self.assertEqual(position_term["canonical_horizon"], "2to6w")
+        self.assertEqual(position_term["coverage_state"], "sufficient_evidence")
+        self.assertGreater(position_term["confidence_score"], row["lane_diagnostics"]["swing_term"]["confidence_score"])
+        self.assertTrue(position_term["lane_data_freshness_ok"])
+
+    def test_market_regime_supportive_intraday_overlay(self) -> None:
+        bars_by_symbol = {
+            "SPY": _make_bars(close_start=500.0, step=0.5),
+            "QQQ": _make_bars(close_start=400.0, step=0.4),
+            "VIXY": _make_bars(close_start=25.0, step=-0.02),
+            "TLT": _make_bars(close_start=100.0, step=-0.05),
+            "IEF": _make_bars(close_start=95.0, step=-0.02),
+            "SHY": _make_bars(close_start=82.0, step=0.0),
+        }
+        intraday_bars = {
+            "SPY": _make_intraday_bars(close_start=531.0, step=0.2),
+            "QQQ": _make_intraday_bars(close_start=424.5, step=0.15),
+            "VIXY": _make_intraday_bars(close_start=23.7, step=-0.05),
+            "TLT": _make_intraday_bars(close_start=96.9, step=0.01),
+            "IEF": _make_intraday_bars(close_start=93.78, step=0.01),
+            "SHY": _make_intraday_bars(close_start=82.0, step=0.0),
+        }
+        snapshots = {
+            "SPY": SnapshotPoint(datetime(2026, 3, 16, 10, 0, tzinfo=timezone.utc), 532.1, 530.0, 0.4, None, "open", "REALTIME"),
+            "QQQ": SnapshotPoint(datetime(2026, 3, 16, 10, 0, tzinfo=timezone.utc), 425.1, 424.0, 0.26, None, "open", "REALTIME"),
+            "VIXY": SnapshotPoint(datetime(2026, 3, 16, 10, 0, tzinfo=timezone.utc), 23.2, 24.0, -3.33, None, "open", "REALTIME"),
+        }
+        row = build_market_regime_row(
+            bars_by_symbol=bars_by_symbol,
+            now_utc=datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc),
+            latest_macro_ts_utc=datetime(2026, 3, 14, 0, 0, tzinfo=timezone.utc),
+            latest_macro_news_ts_utc=datetime(2026, 3, 16, 12, 0, tzinfo=timezone.utc),
+            intraday_bars_by_symbol=intraday_bars,
+            latest_snapshots_by_symbol=snapshots,
+        )
+        overlay = row["evidence"]["intraday_overlay"]
+        self.assertEqual(overlay["intraday_overlay_state"], "supportive")
+        self.assertEqual(overlay["intraday_overlay_freshness"], "minute_confirmed")
+        self.assertGreater(row["evidence"]["intraday_overlay_score"], 0)
+        self.assertIn("intraday_tape_supportive", row["why_code"])
+
+    def test_market_regime_risk_off_intraday_overlay(self) -> None:
+        bars_by_symbol = {
+            "SPY": _make_bars(close_start=500.0, step=0.5),
+            "QQQ": _make_bars(close_start=400.0, step=0.4),
+            "VIXY": _make_bars(close_start=25.0, step=-0.02),
+            "TLT": _make_bars(close_start=100.0, step=-0.05),
+            "IEF": _make_bars(close_start=95.0, step=-0.02),
+            "SHY": _make_bars(close_start=82.0, step=0.0),
+        }
+        intraday_bars = {
+            "SPY": _make_intraday_bars(close_start=527.0, step=-0.35),
+            "QQQ": _make_intraday_bars(close_start=421.5, step=-0.3),
+            "VIXY": _make_intraday_bars(close_start=24.4, step=0.2),
+            "TLT": _make_intraday_bars(close_start=97.0, step=0.03),
+            "IEF": _make_intraday_bars(close_start=93.8, step=0.01),
+            "SHY": _make_intraday_bars(close_start=82.0, step=0.0),
+        }
+        row = build_market_regime_row(
+            bars_by_symbol=bars_by_symbol,
+            now_utc=datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc),
+            latest_macro_ts_utc=datetime(2026, 3, 14, 0, 0, tzinfo=timezone.utc),
+            latest_macro_news_ts_utc=datetime(2026, 3, 16, 12, 0, tzinfo=timezone.utc),
+            intraday_bars_by_symbol=intraday_bars,
+            latest_snapshots_by_symbol={},
+        )
+        overlay = row["evidence"]["intraday_overlay"]
+        self.assertEqual(overlay["intraday_overlay_state"], "risk_off")
+        self.assertEqual(overlay["intraday_overlay_freshness"], "minute_confirmed")
+        self.assertLess(row["evidence"]["intraday_overlay_score"], 0)
+        self.assertIn("intraday_tape_risk_off", row["why_code"])
+
+    def test_market_regime_macro_risk_on_confirmed(self) -> None:
+        bars_by_symbol = {
+            "SPY": _make_bars(close_start=500.0, step=1.0),
+            "QQQ": _make_bars(close_start=400.0, step=0.8),
+            "IWM": _make_bars(close_start=200.0, step=0.45),
+            "VIXY": _make_bars(close_start=25.0, step=-0.1),
+            "TLT": _make_bars(close_start=100.0, step=0.08),
+            "IEF": _make_bars(close_start=95.0, step=0.03),
+            "SHY": _make_bars(close_start=82.0, step=0.0),
+            "XLE": _make_bars(close_start=90.0, step=0.1),
+            "XLP": _make_bars(close_start=80.0, step=0.01),
+            "XLU": _make_bars(close_start=70.0, step=0.0),
+            "XLV": _make_bars(close_start=100.0, step=0.02),
+        }
+        row = build_market_regime_row(
+            bars_by_symbol=bars_by_symbol,
+            now_utc=datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc),
+            latest_macro_ts_utc=datetime(2026, 3, 16, 12, 0, tzinfo=timezone.utc),
+            latest_macro_news_ts_utc=datetime(2026, 3, 16, 13, 0, tzinfo=timezone.utc),
+        )
+        macro = row["evidence"]["macro_hostility"]
+        self.assertEqual(macro["risk_appetite_state"], "risk_on")
+        self.assertEqual(macro["rates_pressure_state"], "supportive")
+        self.assertEqual(macro["defensive_rotation_state"], "cyclical_leadership")
+        self.assertEqual(macro["macro_state"], "risk_on_confirmed")
+
+    def test_market_regime_macro_risk_off(self) -> None:
+        bars_by_symbol = {
+            "SPY": _make_bars(close_start=500.0, step=-1.0),
+            "QQQ": _make_bars(close_start=400.0, step=-0.9),
+            "IWM": _make_bars(close_start=200.0, step=-0.5),
+            "VIXY": _make_bars(close_start=25.0, step=0.2),
+            "TLT": _make_bars(close_start=100.0, step=-0.15),
+            "IEF": _make_bars(close_start=95.0, step=-0.07),
+            "SHY": _make_bars(close_start=82.0, step=0.0),
+            "XLE": _make_bars(close_start=90.0, step=0.55),
+            "XLP": _make_bars(close_start=80.0, step=0.18),
+            "XLU": _make_bars(close_start=70.0, step=0.16),
+            "XLV": _make_bars(close_start=100.0, step=0.2),
+        }
+        row = build_market_regime_row(
+            bars_by_symbol=bars_by_symbol,
+            now_utc=datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc),
+            latest_macro_ts_utc=datetime(2026, 3, 16, 12, 0, tzinfo=timezone.utc),
+            latest_macro_news_ts_utc=datetime(2026, 3, 16, 13, 0, tzinfo=timezone.utc),
+        )
+        macro = row["evidence"]["macro_hostility"]
+        self.assertEqual(macro["risk_appetite_state"], "risk_off")
+        self.assertEqual(macro["rates_pressure_state"], "pressuring")
+        self.assertEqual(macro["energy_stress_state"], "stress")
+        self.assertEqual(macro["defensive_rotation_state"], "defensive_leadership")
+        self.assertEqual(macro["macro_state"], "risk_off")
+
+    def test_market_regime_macro_snapshot_only_unstable(self) -> None:
+        bars_by_symbol = {
+            "SPY": _make_bars(close_start=500.0, step=0.2),
+            "QQQ": _make_bars(close_start=400.0, step=0.12),
+            "IWM": _make_bars(close_start=200.0, step=-0.05),
+            "VIXY": _make_bars(close_start=25.0, step=0.02),
+            "TLT": _make_bars(close_start=100.0, step=-0.01),
+            "IEF": _make_bars(close_start=95.0, step=0.0),
+            "SHY": _make_bars(close_start=82.0, step=0.0),
+            "XLE": _make_bars(close_start=90.0, step=0.18),
+            "XLP": _make_bars(close_start=80.0, step=0.05),
+            "XLU": _make_bars(close_start=70.0, step=0.05),
+            "XLV": _make_bars(close_start=100.0, step=0.03),
+        }
+        snapshots = {
+            "SPY": SnapshotPoint(datetime(2026, 3, 16, 10, 0, tzinfo=timezone.utc), 511.0, 512.0, -0.2, None, "open", "REALTIME"),
+            "QQQ": SnapshotPoint(datetime(2026, 3, 16, 10, 0, tzinfo=timezone.utc), 407.0, 408.5, -0.37, None, "open", "REALTIME"),
+            "VIXY": SnapshotPoint(datetime(2026, 3, 16, 10, 0, tzinfo=timezone.utc), 26.0, 25.4, 2.36, None, "open", "REALTIME"),
+        }
+        row = build_market_regime_row(
+            bars_by_symbol=bars_by_symbol,
+            now_utc=datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc),
+            latest_macro_ts_utc=datetime(2026, 3, 16, 12, 0, tzinfo=timezone.utc),
+            latest_macro_news_ts_utc=datetime(2026, 3, 16, 13, 0, tzinfo=timezone.utc),
+            latest_snapshots_by_symbol=snapshots,
+        )
+        macro = row["evidence"]["macro_hostility"]
+        self.assertEqual(row["evidence"]["intraday_overlay"]["intraday_overlay_freshness"], "snapshot_only")
+        self.assertEqual(macro["macro_intraday_freshness"], "snapshot_only")
+        self.assertIn(macro["macro_state"], {"macro_unstable", "risk_off"})
+
+    def test_market_regime_snapshot_can_support_overlay_without_intraday_bars(self) -> None:
+        bars_by_symbol = {
+            "SPY": _make_bars(close_start=500.0, step=0.5),
+            "QQQ": _make_bars(close_start=400.0, step=0.4),
+            "VIXY": _make_bars(close_start=25.0, step=-0.02),
+            "TLT": _make_bars(close_start=100.0, step=-0.05),
+            "IEF": _make_bars(close_start=95.0, step=-0.02),
+            "SHY": _make_bars(close_start=82.0, step=0.0),
+        }
+        snapshots = {
+            "SPY": SnapshotPoint(datetime(2026, 3, 16, 10, 0, tzinfo=timezone.utc), 532.1, 530.0, 0.4, None, "open", "REALTIME"),
+            "QQQ": SnapshotPoint(datetime(2026, 3, 16, 10, 0, tzinfo=timezone.utc), 425.1, 424.0, 0.26, None, "open", "REALTIME"),
+            "VIXY": SnapshotPoint(datetime(2026, 3, 16, 10, 0, tzinfo=timezone.utc), 23.2, 24.0, -3.33, None, "open", "REALTIME"),
+        }
+        row = build_market_regime_row(
+            bars_by_symbol=bars_by_symbol,
+            now_utc=datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc),
+            latest_macro_ts_utc=datetime(2026, 3, 14, 0, 0, tzinfo=timezone.utc),
+            latest_macro_news_ts_utc=datetime(2026, 3, 16, 12, 0, tzinfo=timezone.utc),
+            intraday_bars_by_symbol={},
+            latest_snapshots_by_symbol=snapshots,
+        )
+        self.assertEqual(row["evidence"]["intraday_overlay"]["intraday_overlay_state"], "supportive")
+        self.assertEqual(row["evidence"]["intraday_overlay"]["intraday_overlay_freshness"], "snapshot_only")
+        self.assertIn("snapshot_confirms_risk_on", row["why_code"])
+
+
+if __name__ == "__main__":
+    unittest.main()

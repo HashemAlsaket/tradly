@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tradly.pipeline.review_actions_llm import main
+from tradly.pipeline.ingest_market_snapshots import main
 
 
 if __name__ == "__main__":

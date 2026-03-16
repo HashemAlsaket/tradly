@@ -13,11 +13,70 @@
   },
   "max_pages_per_bucket": 300,
   "buckets": {
-    "core_semis": ["MU", "SNDK", "NVDA", "NVTS", "AMD", "AVGO", "INTC", "TSM", "ASML", "AMAT", "LRCX", "KLAC"],
-    "us_macro": ["SPY", "QQQ", "TLT", "IEF", "SHY", "VIXY", "USO", "GLD", "UUP"],
-    "sector_context": ["SOXX", "SMH", "XSD", "XLK"],
-    "asia_semis": ["TSM", "ASML", "ARM", "AMAT", "LRCX", "KLAC", "ADI"],
-    "asia_macro": ["EWJ", "EWT", "FXI", "KWEB", "UUP"],
-    "event_reserve": ["MU", "NVDA", "TSM", "ASML"]
+    "core_semis": [
+      "AMAT",
+      "AMD",
+      "ASML",
+      "AVGO",
+      "INTC",
+      "KLAC",
+      "LRCX",
+      "MU",
+      "NVDA",
+      "NVTS",
+      "SNDK",
+      "TSM"
+    ],
+    "us_macro": [
+      "ARKK",
+      "GLD",
+      "IEF",
+      "QQQ",
+      "SHY",
+      "SPY",
+      "TLT",
+      "USO",
+      "UUP",
+      "VIXY"
+    ],
+    "asia_semis": [
+      "ADI",
+      "AMAT",
+      "ARM",
+      "ASML",
+      "KLAC",
+      "LRCX",
+      "TSM"
+    ],
+    "asia_macro": [
+      "EWJ",
+      "EWT",
+      "FXI",
+      "KWEB",
+      "UUP"
+    ],
+    "sector_context": [
+      "KRE",
+      "SMH",
+      "SOXX",
+      "XLB",
+      "XLC",
+      "XLE",
+      "XLF",
+      "XLI",
+      "XLK",
+      "XLP",
+      "XLRE",
+      "XLU",
+      "XLV",
+      "XLY",
+      "XSD"
+    ],
+    "event_reserve": [
+      "ASML",
+      "MU",
+      "NVDA",
+      "TSM"
+    ]
   }
 }

@@ -35,11 +35,6 @@ def _append_log(path: Path, payload: dict) -> None:
         fh.write(json.dumps(payload, ensure_ascii=True) + "\n")
 
 
-def _write_json(path: Path, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
-
-
 def _extract_json_payload(text: str) -> dict | None:
     blob = text.strip()
     if not blob:
@@ -49,6 +44,16 @@ def _extract_json_payload(text: str) -> dict | None:
         return parsed if isinstance(parsed, dict) else None
     except json.JSONDecodeError:
         return None
+
+
+def _load_json(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def main() -> int:
@@ -114,7 +119,9 @@ def main() -> int:
         cycle_stderr = ""
         for attempt in range(1, max_attempts + 1):
             cycle_cmd = [sys.executable, "-m", "tradly.pipeline.cycle"]
-            rc, out, err = _run_step(cycle_cmd, repo_root, env)
+            cycle_env = env.copy()
+            cycle_env["TRADLY_SKIP_PREFLIGHT_CATCHUP"] = "1"
+            rc, out, err = _run_step(cycle_cmd, repo_root, cycle_env)
             cycle_rc = rc
             cycle_stdout = out
             cycle_stderr = err
@@ -124,11 +131,12 @@ def main() -> int:
             if attempt < max_attempts:
                 time.sleep(retry_sleep_sec)
 
-        freshness_cmd = [sys.executable, "-m", "tradly.ops.runtime_freshness_audit"]
-        freshness_rc, freshness_out, freshness_err = _run_step(freshness_cmd, repo_root, env)
-        freshness_payload = _extract_json_payload(freshness_out)
-
         ended_at = datetime.now(timezone.utc)
+        snapshot_payload = _load_json(snapshot_path)
+        freshness_payload = snapshot_payload.get("freshness") if snapshot_payload else None
+        freshness_rc = 0 if cycle_rc == 0 and freshness_payload is not None else None
+        freshness_out = json.dumps(freshness_payload, ensure_ascii=True, indent=2) if freshness_payload else ""
+        freshness_err = ""
         payload = {
             "started_at_utc": started_at.isoformat(),
             "ended_at_utc": ended_at.isoformat(),
@@ -137,8 +145,16 @@ def main() -> int:
             "cycle_rc": cycle_rc,
             "freshness_rc": freshness_rc,
             "cycle_status": "PASS" if cycle_rc == 0 else "FAIL",
-            "postflight_status": "PASS" if freshness_rc == 0 else "FAIL",
-            "status": "PASS" if cycle_rc == 0 and freshness_rc == 0 else "FAIL",
+            "postflight_status": (
+                str(snapshot_payload.get("postflight_status", "FAIL")).upper()
+                if snapshot_payload
+                else "FAIL"
+            ),
+            "status": (
+                str(snapshot_payload.get("overall_status", "FAIL")).upper()
+                if snapshot_payload
+                else "FAIL"
+            ),
             "preflight_lags": preflight_payload.get("lags") if preflight_payload else None,
             "preflight_actions": preflight_payload.get("actions") if preflight_payload else None,
             "preflight_stdout_tail": preflight_out[-3000:],
@@ -149,21 +165,6 @@ def main() -> int:
             "freshness_stderr_tail": freshness_err[-3000:],
         }
         _append_log(log_path, payload)
-        if freshness_payload is not None:
-            _write_json(
-                snapshot_path,
-                {
-                    "written_at_utc": ended_at.isoformat(),
-                    "cycle_started_at_utc": started_at.isoformat(),
-                    "cycle_ended_at_utc": ended_at.isoformat(),
-                    "cycle_status": payload["cycle_status"],
-                    "postflight_status": payload["postflight_status"],
-                    "overall_status": payload["status"],
-                    "preflight_actions": payload["preflight_actions"],
-                    "preflight_lags": payload["preflight_lags"],
-                    "freshness": freshness_payload,
-                },
-            )
 
         if cycle_stdout:
             print(cycle_stdout)

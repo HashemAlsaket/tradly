@@ -11,6 +11,7 @@ from tradly.paths import get_repo_root
 
 
 WATCHLIST_PATH = Path("data/manual/news_seed_watchlists.json")
+DEFAULT_MIN_SYMBOL_RELEVANCE = 15.0
 
 
 class RateLimitReached(Exception):
@@ -23,6 +24,18 @@ class UsageLimitReached(Exception):
 
 class FetchError(Exception):
     pass
+
+
+def _min_symbol_relevance() -> float:
+    raw = os.getenv("TRADLY_MARKETAUX_MIN_SYMBOL_RELEVANCE", str(DEFAULT_MIN_SYMBOL_RELEVANCE)).strip()
+    try:
+        return float(raw)
+    except ValueError:
+        print(
+            f"warning=invalid_TRADLY_MARKETAUX_MIN_SYMBOL_RELEVANCE value={raw} "
+            f"using_default={DEFAULT_MIN_SYMBOL_RELEVANCE}"
+        )
+        return DEFAULT_MIN_SYMBOL_RELEVANCE
 
 
 def _load_dotenv(path: Path) -> None:
@@ -105,6 +118,7 @@ def _apply_env_overrides(
     lookback_override = os.getenv("NEWS_SEED_LOOKBACK_DAYS", "").strip()
     pages_override = os.getenv("NEWS_SEED_MAX_PAGES_PER_BUCKET", "").strip()
     bucket_filter_raw = os.getenv("NEWS_SEED_BUCKETS", "").strip()
+    symbol_filter_raw = os.getenv("NEWS_SEED_SYMBOLS", "").strip()
     request_cap_raw = os.getenv("NEWS_SEED_REQUEST_CAP", "").strip()
 
     if lookback_override:
@@ -113,7 +127,10 @@ def _apply_env_overrides(
         max_pages_per_bucket = int(pages_override)
 
     filtered_buckets = buckets
-    if bucket_filter_raw:
+    if symbol_filter_raw:
+        selected_symbols = [item.strip().upper() for item in symbol_filter_raw.split(",") if item.strip()]
+        filtered_buckets = {"targeted_symbols": selected_symbols}
+    elif bucket_filter_raw:
         selected = [item.strip() for item in bucket_filter_raw.split(",") if item.strip()]
         filtered_buckets = {name: symbols for name, symbols in buckets.items() if name in selected}
 
@@ -151,6 +168,7 @@ def main() -> int:
         max_pages_per_bucket=max_pages_per_bucket,
         buckets=buckets,
     )
+    min_symbol_relevance = _min_symbol_relevance()
     if not buckets:
         print("no buckets configured")
         return 5
@@ -172,6 +190,7 @@ def main() -> int:
     event_rows: list[tuple] = []
     symbol_rows: list[tuple] = []
     bucket_counts: dict[str, int] = {}
+    filtered_symbol_links_total = 0
     requests_made = 0
 
     limited = False
@@ -251,6 +270,9 @@ def main() -> int:
                         continue
                     match_score = ent.get("match_score")
                     relevance = float(match_score) if match_score is not None else None
+                    if relevance is None or relevance < min_symbol_relevance:
+                        filtered_symbol_links_total += 1
+                        continue
                     symbol_rows.append(
                         (
                             "marketaux",
@@ -319,6 +341,8 @@ def main() -> int:
     print(f"cutoff_utc={cutoff_utc.isoformat()}")
     print(f"news_events_upserted={len(event_rows)}")
     print(f"news_symbols_upserted={len(symbol_rows)}")
+    print(f"news_symbols_filtered_below_relevance={filtered_symbol_links_total}")
+    print(f"min_symbol_relevance={min_symbol_relevance}")
     print(f"bucket_counts={bucket_counts}")
     print(f"requests_made={requests_made}")
     print(f"fetch_error_count={fetch_error_count}")

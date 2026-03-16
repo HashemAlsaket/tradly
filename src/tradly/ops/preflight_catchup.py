@@ -5,12 +5,12 @@ import os
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from tradly.paths import get_repo_root
 from tradly.services.db_time import from_db_utc
-from tradly.services.market_calendar import previous_trading_day
+from tradly.services.market_calendar import market_session_state, previous_trading_day
 from tradly.services.time_context import get_time_context
 
 
@@ -24,6 +24,21 @@ class SourceLag:
 
 
 MARKET_TZ = ZoneInfo("America/New_York")
+PREMARKET_OPEN_ET = time(4, 0)
+AFTER_HOURS_CLOSE_ET = time(20, 0)
+
+
+def _classify_macro_age_days(
+    *,
+    age_days: int,
+    warn_after_days: int,
+    block_after_days: int,
+) -> str:
+    if age_days > block_after_days:
+        return "stale"
+    if age_days > warn_after_days:
+        return "warning"
+    return "fresh"
 
 
 def _load_dotenv(path) -> None:
@@ -56,6 +71,29 @@ def _market_date_from_db_ts(ts: datetime) -> date:
     return from_db_utc(ts).astimezone(MARKET_TZ).date()
 
 
+def _session_requires_intraday(*, now_utc: datetime, market_session: str) -> bool:
+    if market_session in {"weekend", "holiday"}:
+        return False
+    now_et = now_utc.astimezone(MARKET_TZ)
+    current_time = now_et.time()
+    return PREMARKET_OPEN_ET <= current_time <= AFTER_HOURS_CLOSE_ET
+
+
+def _intraday_source_status(
+    *,
+    latest_ts: datetime | None,
+    now_utc: datetime,
+    market_session: str,
+    max_age_sec: int,
+) -> tuple[str, int | None]:
+    if not _session_requires_intraday(now_utc=now_utc, market_session=market_session):
+        return "not_required", None
+    age_sec = _age_seconds(latest_ts, now_utc)
+    if age_sec is None:
+        return "missing", None
+    return ("fresh", age_sec) if age_sec <= max_age_sec else ("stale", age_sec)
+
+
 def main() -> int:
     repo_root = get_repo_root()
     _load_dotenv(repo_root / ".env")
@@ -73,15 +111,25 @@ def main() -> int:
     time_ctx = get_time_context()
     now_utc = time_ctx.now_utc
     now_local = time_ctx.now_local
+    market_session = market_session_state(now_utc)
     expected_min_market_date = previous_trading_day(now_utc.astimezone(MARKET_TZ).date())
     news_pull_max_age_sec = int(os.getenv("TRADLY_PREFLIGHT_NEWS_PULL_MAX_AGE_SEC", "3600"))
-    macro_max_age_days = int(os.getenv("TRADLY_PREFLIGHT_MACRO_MAX_AGE_DAYS", "2"))
+    macro_warn_age_days = int(os.getenv("TRADLY_PREFLIGHT_MACRO_WARN_AGE_DAYS", "2"))
+    macro_block_age_days = int(os.getenv("TRADLY_PREFLIGHT_MACRO_BLOCK_AGE_DAYS", "5"))
     interp_lookback_days = int(os.getenv("TRADLY_PREFLIGHT_INTERPRET_LOOKBACK_DAYS", "7"))
+    intraday_bar_max_age_sec = int(os.getenv("TRADLY_1M_MAX_AGE_SEC_ACTIVE_SESSION", "1200"))
+    snapshot_max_age_sec = int(os.getenv("TRADLY_SNAPSHOT_MAX_AGE_SEC_ACTIVE_SESSION", "1200"))
 
     conn = duckdb.connect(str(db_path), read_only=True)
     try:
         latest_market_bar = conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1d'"
+        ).fetchone()[0]
+        latest_intraday_bar = conn.execute(
+            "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1m'"
+        ).fetchone()[0]
+        latest_snapshot = conn.execute(
+            "SELECT MAX(as_of_utc) FROM market_snapshots"
         ).fetchone()[0]
         latest_news_pull = conn.execute(
             """
@@ -141,6 +189,48 @@ def main() -> int:
             )
         )
 
+    intraday_bar_status, intraday_bar_age_sec = _intraday_source_status(
+        latest_ts=latest_intraday_bar,
+        now_utc=now_utc,
+        market_session=market_session,
+        max_age_sec=intraday_bar_max_age_sec,
+    )
+    if latest_intraday_bar is not None:
+        latest_intraday_market_date = _market_date_from_db_ts(latest_intraday_bar)
+        intraday_backfill_from = max(expected_min_market_date, latest_intraday_market_date - timedelta(days=1)).isoformat()
+    else:
+        intraday_backfill_from = (expected_min_market_date - timedelta(days=5)).isoformat()
+    intraday_backfill_to = now_local.date().isoformat()
+    lags.append(
+        SourceLag(
+            source="market_bars_1m",
+            status="fresh" if intraday_bar_status in {"fresh", "not_required"} else "stale",
+            detail=(
+                f"market_session={market_session} status={intraday_bar_status} "
+                f"age_sec={intraday_bar_age_sec} max_age_sec={intraday_bar_max_age_sec}"
+            ),
+            backfill_from=intraday_backfill_from if intraday_bar_status in {"missing", "stale"} else None,
+            backfill_to=intraday_backfill_to if intraday_bar_status in {"missing", "stale"} else None,
+        )
+    )
+
+    snapshot_status, snapshot_age_sec = _intraday_source_status(
+        latest_ts=latest_snapshot,
+        now_utc=now_utc,
+        market_session=market_session,
+        max_age_sec=snapshot_max_age_sec,
+    )
+    lags.append(
+        SourceLag(
+            source="market_snapshots",
+            status="fresh" if snapshot_status in {"fresh", "not_required"} else "stale",
+            detail=(
+                f"market_session={market_session} status={snapshot_status} "
+                f"age_sec={snapshot_age_sec} max_age_sec={snapshot_max_age_sec}"
+            ),
+        )
+    )
+
     news_pull_age = _age_seconds(latest_news_pull, now_utc)
     news_pull_stale = (
         news_pull_age is None or news_pull_age > news_pull_max_age_sec or success_news_pulls_today < 1
@@ -167,20 +257,28 @@ def main() -> int:
         )
     )
 
-    macro_stale = True
+    macro_needs_refresh = True
     if latest_macro is not None:
         latest_macro = from_db_utc(latest_macro)
         macro_age_days = int((now_utc.date() - latest_macro.date()).days)
-        macro_stale = macro_age_days > macro_max_age_days
-        macro_backfill_from = (
-            (latest_macro.date() - timedelta(days=3)).isoformat() if macro_stale else None
+        macro_status = _classify_macro_age_days(
+            age_days=macro_age_days,
+            warn_after_days=macro_warn_age_days,
+            block_after_days=macro_block_age_days,
         )
-        macro_backfill_to = now_utc.date().isoformat() if macro_stale else None
+        macro_needs_refresh = macro_status != "fresh"
+        macro_backfill_from = (
+            (latest_macro.date() - timedelta(days=3)).isoformat() if macro_needs_refresh else None
+        )
+        macro_backfill_to = now_utc.date().isoformat() if macro_needs_refresh else None
         lags.append(
             SourceLag(
                 source="macro_points",
-                status="stale" if macro_stale else "fresh",
-                detail=f"latest_date={latest_macro.date()} age_days={macro_age_days} max_age_days={macro_max_age_days}",
+                status=macro_status,
+                detail=(
+                    f"latest_date={latest_macro.date()} age_days={macro_age_days} "
+                    f"warn_age_days={macro_warn_age_days} block_age_days={macro_block_age_days}"
+                ),
                 backfill_from=macro_backfill_from,
                 backfill_to=macro_backfill_to,
             )
@@ -205,6 +303,7 @@ def main() -> int:
         actions.append("ingest_market_bars")
         market_lag = next((lag for lag in lags if lag.source == "market_bars_1d"), None)
         env_market = dict(env)
+        env_market["TRADLY_MARKET_BACKFILL_MODE"] = "cutover"
         if market_lag and market_lag.backfill_from and market_lag.backfill_to:
             env_market["TRADLY_MARKET_FROM_DATE"] = market_lag.backfill_from
             env_market["TRADLY_MARKET_TO_DATE"] = market_lag.backfill_to
@@ -217,6 +316,54 @@ def main() -> int:
                         "status": "FAIL",
                         "phase": "preflight_catchup",
                         "reason": "ingest_market_bars_failed",
+                        "lags": [asdict(x) for x in lags],
+                        "actions": actions,
+                        "runs": runs,
+                    },
+                    indent=2,
+                )
+            )
+            return 1
+
+    if _session_requires_intraday(now_utc=now_utc, market_session=market_session) and intraday_bar_status in {"missing", "stale"}:
+        actions.append("ingest_market_bars_1m")
+        intraday_lag = next((lag for lag in lags if lag.source == "market_bars_1m"), None)
+        env_intraday = dict(env)
+        env_intraday["TRADLY_MARKET_BACKFILL_MODE"] = "cutover"
+        if intraday_lag and intraday_lag.backfill_from and intraday_lag.backfill_to:
+            env_intraday["TRADLY_MARKET_1M_FROM_DATE"] = intraday_lag.backfill_from
+            env_intraday["TRADLY_MARKET_1M_TO_DATE"] = intraday_lag.backfill_to
+        rc, out, err = _run_module("tradly.pipeline.ingest_market_bars_1m", repo_root, env_intraday)
+        runs.append({"step": "ingest_market_bars_1m", "rc": rc, "stdout_tail": out[-1200:], "stderr_tail": err[-1200:]})
+        if rc != 0:
+            print(
+                json.dumps(
+                    {
+                        "status": "FAIL",
+                        "phase": "preflight_catchup",
+                        "reason": "ingest_market_bars_1m_failed",
+                        "lags": [asdict(x) for x in lags],
+                        "actions": actions,
+                        "runs": runs,
+                    },
+                    indent=2,
+                )
+            )
+            return 1
+
+    if _session_requires_intraday(now_utc=now_utc, market_session=market_session) and snapshot_status in {"missing", "stale"}:
+        actions.append("ingest_market_snapshots")
+        env_snapshots = dict(env)
+        env_snapshots["TRADLY_MARKET_BACKFILL_MODE"] = "cutover"
+        rc, out, err = _run_module("tradly.pipeline.ingest_market_snapshots", repo_root, env_snapshots)
+        runs.append({"step": "ingest_market_snapshots", "rc": rc, "stdout_tail": out[-1200:], "stderr_tail": err[-1200:]})
+        if rc != 0:
+            print(
+                json.dumps(
+                    {
+                        "status": "FAIL",
+                        "phase": "preflight_catchup",
+                        "reason": "ingest_market_snapshots_failed",
                         "lags": [asdict(x) for x in lags],
                         "actions": actions,
                         "runs": runs,
@@ -271,7 +418,7 @@ def main() -> int:
             )
             return 1
 
-    if macro_stale:
+    if macro_needs_refresh:
         actions.append("seed_macro_fred")
         macro_lag = next((lag for lag in lags if lag.source == "macro_points"), None)
         env_macro = dict(env)
@@ -301,6 +448,12 @@ def main() -> int:
     try:
         final_latest_market_bar = conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1d'"
+        ).fetchone()[0]
+        final_latest_intraday_bar = conn.execute(
+            "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1m'"
+        ).fetchone()[0]
+        final_latest_snapshot = conn.execute(
+            "SELECT MAX(as_of_utc) FROM market_snapshots"
         ).fetchone()[0]
         final_latest_news_pull = conn.execute(
             """
@@ -344,6 +497,40 @@ def main() -> int:
             )
         )
 
+    final_intraday_status, final_intraday_age_sec = _intraday_source_status(
+        latest_ts=final_latest_intraday_bar,
+        now_utc=now_utc,
+        market_session=market_session,
+        max_age_sec=intraday_bar_max_age_sec,
+    )
+    final_lags.append(
+        SourceLag(
+            source="market_bars_1m",
+            status="fresh" if final_intraday_status in {"fresh", "not_required"} else "stale",
+            detail=(
+                f"market_session={market_session} status={final_intraday_status} "
+                f"age_sec={final_intraday_age_sec} max_age_sec={intraday_bar_max_age_sec}"
+            ),
+        )
+    )
+
+    final_snapshot_status, final_snapshot_age_sec = _intraday_source_status(
+        latest_ts=final_latest_snapshot,
+        now_utc=now_utc,
+        market_session=market_session,
+        max_age_sec=snapshot_max_age_sec,
+    )
+    final_lags.append(
+        SourceLag(
+            source="market_snapshots",
+            status="fresh" if final_snapshot_status in {"fresh", "not_required"} else "stale",
+            detail=(
+                f"market_session={market_session} status={final_snapshot_status} "
+                f"age_sec={final_snapshot_age_sec} max_age_sec={snapshot_max_age_sec}"
+            ),
+        )
+    )
+
     final_news_age = _age_seconds(final_latest_news_pull, now_utc)
     final_news_stale = (
         final_news_age is None or final_news_age > news_pull_max_age_sec or final_success_news_pulls_today < 1
@@ -364,14 +551,18 @@ def main() -> int:
     else:
         final_latest_macro = from_db_utc(final_latest_macro)
         final_macro_age_days = int((now_utc.date() - final_latest_macro.date()).days)
-        final_macro_stale = final_macro_age_days > macro_max_age_days
+        final_macro_status = _classify_macro_age_days(
+            age_days=final_macro_age_days,
+            warn_after_days=macro_warn_age_days,
+            block_after_days=macro_block_age_days,
+        )
         final_lags.append(
             SourceLag(
                 source="macro_points",
-                status="stale" if final_macro_stale else "fresh",
+                status=final_macro_status,
                 detail=(
                     f"latest_date={final_latest_macro.date()} age_days={final_macro_age_days} "
-                    f"max_age_days={macro_max_age_days}"
+                    f"warn_age_days={macro_warn_age_days} block_age_days={macro_block_age_days}"
                 ),
             )
         )

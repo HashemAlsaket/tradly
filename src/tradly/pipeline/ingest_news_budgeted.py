@@ -17,6 +17,27 @@ WATCHLIST_PATH = Path("data/manual/news_seed_watchlists.json")
 DEFAULT_DAILY_BUDGET = 100
 DEFAULT_LIMIT_PER_REQUEST = 3
 DEFAULT_PULLS_PER_BUCKET_PER_RUN = 1
+DEFAULT_MIN_SYMBOL_RELEVANCE = 15.0
+REQUIRED_BUCKETS = (
+    "core_semis",
+    "us_macro",
+    "asia_semis",
+    "asia_macro",
+    "sector_context",
+    "event_reserve",
+)
+
+
+def _min_symbol_relevance() -> float:
+    raw = os.getenv("TRADLY_MARKETAUX_MIN_SYMBOL_RELEVANCE", str(DEFAULT_MIN_SYMBOL_RELEVANCE)).strip()
+    try:
+        return float(raw)
+    except ValueError:
+        print(
+            f"warning=invalid_TRADLY_MARKETAUX_MIN_SYMBOL_RELEVANCE value={raw} "
+            f"using_default={DEFAULT_MIN_SYMBOL_RELEVANCE}"
+        )
+        return DEFAULT_MIN_SYMBOL_RELEVANCE
 
 
 def _load_dotenv(path: Path) -> None:
@@ -77,6 +98,12 @@ def _load_watchlists(path: Path) -> tuple[int, int, int, dict[str, int], dict[st
             buckets[str(key)] = parsed
     if not buckets:
         raise RuntimeError("no buckets configured")
+    missing_required = [bucket for bucket in REQUIRED_BUCKETS if bucket not in buckets]
+    if missing_required:
+        raise RuntimeError(f"missing_required_buckets:{','.join(missing_required)}")
+    empty_required = [bucket for bucket in REQUIRED_BUCKETS if not buckets.get(bucket)]
+    if empty_required:
+        raise RuntimeError(f"empty_required_buckets:{','.join(empty_required)}")
     if pulls_per_bucket_per_run <= 0:
         pulls_per_bucket_per_run = DEFAULT_PULLS_PER_BUCKET_PER_RUN
     return daily_budget, limit_per_request, pulls_per_bucket_per_run, caps, buckets
@@ -159,17 +186,21 @@ def main() -> int:
         print("duckdb is not installed. Install it with: pip install duckdb")
         return 4
 
-    daily_budget, limit_per_request, pulls_per_bucket_per_run, caps, buckets = _load_watchlists(watchlist_path)
+    try:
+        daily_budget, limit_per_request, pulls_per_bucket_per_run, caps, buckets = _load_watchlists(watchlist_path)
+    except RuntimeError as exc:
+        print(f"invalid_watchlist_contract:{exc}")
+        return 5
     expected_budget_raw = os.getenv("TRADLY_NEWS_EXPECTED_DAILY_BUDGET", "").strip()
     run_max_requests_raw = os.getenv("TRADLY_NEWS_RUN_MAX_REQUESTS", "60").strip()
     try:
         run_max_requests = int(run_max_requests_raw)
     except ValueError:
         print(f"invalid TRADLY_NEWS_RUN_MAX_REQUESTS={run_max_requests_raw}")
-        return 5
+        return 6
     if run_max_requests <= 0:
         print(f"invalid TRADLY_NEWS_RUN_MAX_REQUESTS={run_max_requests}")
-        return 6
+        return 7
     if expected_budget_raw:
         try:
             expected_budget = int(expected_budget_raw)
@@ -183,6 +214,7 @@ def main() -> int:
     time_ctx = get_time_context()
     now_db_utc = to_db_utc(time_ctx.now_utc)
     published_after_utc = _normalize_published_after(os.getenv("TRADLY_NEWS_PUBLISHED_AFTER_UTC", ""))
+    min_symbol_relevance = _min_symbol_relevance()
     # Budgeting is aligned to trader workflow timezone (America/Chicago), not UTC midnight.
     request_date_utc = time_ctx.now_local.date()
 
@@ -216,9 +248,20 @@ def main() -> int:
             for row in conn.execute("SELECT symbol FROM instruments").fetchall()
             if row[0] is not None
         }
+        invalid_bucket_symbols: dict[str, list[str]] = {}
+        for bucket, symbols in buckets.items():
+            invalid = sorted(symbol for symbol in symbols if symbol not in allowed_symbols)
+            if invalid:
+                invalid_bucket_symbols[bucket] = invalid
+        if invalid_bucket_symbols:
+            print("invalid_watchlist_contract:bucket_symbols_missing_from_instruments")
+            for bucket, invalid in sorted(invalid_bucket_symbols.items()):
+                print(f"error=bucket_symbol_missing:{bucket}:{','.join(invalid)}")
+            return 8
 
         events_upserted_total = 0
         symbols_upserted_total = 0
+        filtered_symbol_links_total = 0
         requests_made = 0
         stop_all_buckets = False
 
@@ -279,6 +322,7 @@ def main() -> int:
 
                 event_rows: list[tuple] = []
                 symbol_rows: list[tuple] = []
+                filtered_symbol_links = 0
                 if response_status == "success":
                     for item in articles:
                         news_id = str(item.get("uuid") or "").strip()
@@ -310,14 +354,18 @@ def main() -> int:
                         entities = item.get("entities") if isinstance(item.get("entities"), list) else []
                         for ent in entities:
                             symbol = str(ent.get("symbol") or "").strip().upper()
+                            relevance = float(ent.get("match_score")) if ent.get("match_score") is not None else None
                             if not symbol or symbol not in allowed_symbols:
+                                continue
+                            if relevance is None or relevance < min_symbol_relevance:
+                                filtered_symbol_links += 1
                                 continue
                             symbol_rows.append(
                                 (
                                     "marketaux",
                                     news_id,
                                     symbol,
-                                    float(ent.get("match_score")) if ent.get("match_score") is not None else None,
+                                    relevance,
                                     published_at,
                                     now_db_utc,
                                 )
@@ -382,9 +430,11 @@ def main() -> int:
 
                 events_upserted_total += len(event_rows)
                 symbols_upserted_total += len(symbol_rows)
+                filtered_symbol_links_total += filtered_symbol_links
                 print(
                     f"bucket={bucket} status={response_status} req_used={used_by_bucket[bucket]}/{cap} "
-                    f"events={len(event_rows)} symbol_links={len(symbol_rows)}"
+                    f"events={len(event_rows)} symbol_links={len(symbol_rows)} "
+                    f"filtered_symbol_links={filtered_symbol_links}"
                 )
                 if response_status == "limit_reached":
                     stop_all_buckets = True
@@ -398,6 +448,8 @@ def main() -> int:
     print(f"run_max_requests={run_max_requests}")
     print(f"events_upserted={events_upserted_total}")
     print(f"symbol_links_upserted={symbols_upserted_total}")
+    print(f"symbol_links_filtered_below_relevance={filtered_symbol_links_total}")
+    print(f"min_symbol_relevance={min_symbol_relevance}")
     print(f"daily_budget={daily_budget}")
     return 0
 

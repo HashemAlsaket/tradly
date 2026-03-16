@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS market_bars (
   symbol TEXT NOT NULL,
   timeframe TEXT NOT NULL,               -- 1m, 1d
   ts_utc TIMESTAMP NOT NULL,             -- bar start
+  calendar_date DATE,
+  day_of_week INTEGER,
+  day_name TEXT,
+  is_weekend BOOLEAN,
+  is_market_holiday BOOLEAN,
+  is_trading_day BOOLEAN,
+  market_calendar_state TEXT,
+  last_cash_session_date DATE,
   as_of_utc TIMESTAMP NOT NULL,
   open DOUBLE,
   high DOUBLE,
@@ -70,7 +78,60 @@ CREATE TABLE IF NOT EXISTS market_bars (
   FOREIGN KEY (symbol) REFERENCES instruments(symbol)
 );
 
--- 5) Run manifests (one row per decision cycle)
+-- 5) Trading calendar dimension
+CREATE TABLE IF NOT EXISTS market_calendar (
+  calendar_date DATE PRIMARY KEY,
+  day_of_week INTEGER NOT NULL,          -- 0=Sunday ... 6=Saturday
+  day_name TEXT NOT NULL,
+  is_weekend BOOLEAN NOT NULL,
+  is_market_holiday BOOLEAN NOT NULL,
+  is_trading_day BOOLEAN NOT NULL,
+  market_calendar_state TEXT NOT NULL,   -- trading_day, weekend, holiday
+  last_cash_session_date DATE NOT NULL,
+  next_cash_session_date DATE NOT NULL,
+  as_of_utc TIMESTAMP NOT NULL,
+  ingested_at_utc TIMESTAMP NOT NULL
+);
+
+-- 5b) Current market snapshots (point-in-time state, not bars)
+CREATE TABLE IF NOT EXISTS market_snapshots (
+  symbol TEXT NOT NULL,
+  as_of_utc TIMESTAMP NOT NULL,
+  calendar_date DATE,
+  day_of_week INTEGER,
+  day_name TEXT,
+  is_weekend BOOLEAN,
+  is_market_holiday BOOLEAN,
+  is_trading_day BOOLEAN,
+  market_calendar_state TEXT,
+  last_cash_session_date DATE,
+  last_trade_price DOUBLE,
+  last_trade_size DOUBLE,
+  last_trade_ts_utc TIMESTAMP,
+  bid_price DOUBLE,
+  bid_size DOUBLE,
+  ask_price DOUBLE,
+  ask_size DOUBLE,
+  last_quote_ts_utc TIMESTAMP,
+  session_open DOUBLE,
+  session_high DOUBLE,
+  session_low DOUBLE,
+  session_close DOUBLE,
+  session_volume DOUBLE,
+  prev_close DOUBLE,
+  change DOUBLE,
+  change_pct DOUBLE,
+  day_vwap DOUBLE,
+  market_status TEXT,
+  data_status TEXT,
+  source TEXT NOT NULL,
+  ingested_at_utc TIMESTAMP NOT NULL,
+  updated_at_utc TIMESTAMP NOT NULL,
+  PRIMARY KEY (symbol, as_of_utc),
+  FOREIGN KEY (symbol) REFERENCES instruments(symbol)
+);
+
+-- 6) Run manifests (one row per decision cycle)
 CREATE TABLE IF NOT EXISTS run_manifests (
   run_id TEXT PRIMARY KEY,
   run_type TEXT NOT NULL,                -- intraday, hourly, daily
@@ -86,7 +147,7 @@ CREATE TABLE IF NOT EXISTS run_manifests (
   created_at_utc TIMESTAMP NOT NULL
 );
 
--- 6) Audit results (data/calculation/decision)
+-- 7) Audit results (data/calculation/decision)
 CREATE TABLE IF NOT EXISTS audit_results (
   run_id TEXT NOT NULL,
   audit_type TEXT NOT NULL,              -- data, calculation, decision
@@ -98,7 +159,7 @@ CREATE TABLE IF NOT EXISTS audit_results (
   FOREIGN KEY (run_id) REFERENCES run_manifests(run_id)
 );
 
--- 7) Recommendations
+-- 8) Recommendations
 CREATE TABLE IF NOT EXISTS recommendations (
   run_id TEXT NOT NULL,
   symbol TEXT NOT NULL,
@@ -123,7 +184,7 @@ CREATE TABLE IF NOT EXISTS recommendations (
   FOREIGN KEY (symbol) REFERENCES instruments(symbol)
 );
 
--- 8) Manual execution journal (user executed in Robinhood)
+-- 9) Manual execution journal (user executed in Robinhood)
 CREATE TABLE IF NOT EXISTS execution_journal (
   journal_id TEXT PRIMARY KEY,
   run_id TEXT,
@@ -141,11 +202,19 @@ CREATE TABLE IF NOT EXISTS execution_journal (
   FOREIGN KEY (symbol) REFERENCES instruments(symbol)
 );
 
--- 9) News events (provider-scoped identity)
+-- 10) News events (provider-scoped identity)
 CREATE TABLE IF NOT EXISTS news_events (
   provider TEXT NOT NULL,
   provider_news_id TEXT NOT NULL,
   published_at_utc TIMESTAMP NOT NULL,
+  calendar_date DATE,
+  day_of_week INTEGER,
+  day_name TEXT,
+  is_weekend BOOLEAN,
+  is_market_holiday BOOLEAN,
+  is_trading_day BOOLEAN,
+  market_calendar_state TEXT,
+  last_cash_session_date DATE,
   as_of_utc TIMESTAMP NOT NULL,
   source_name TEXT NOT NULL,
   source_quality TEXT,
@@ -159,7 +228,7 @@ CREATE TABLE IF NOT EXISTS news_events (
   PRIMARY KEY (provider, provider_news_id)
 );
 
--- 10) News to symbol mapping
+-- 11) News to symbol mapping
 CREATE TABLE IF NOT EXISTS news_symbols (
   provider TEXT NOT NULL,
   provider_news_id TEXT NOT NULL,
@@ -172,10 +241,18 @@ CREATE TABLE IF NOT EXISTS news_symbols (
   FOREIGN KEY (symbol) REFERENCES instruments(symbol)
 );
 
--- 11) Macro data points
+-- 12) Macro data points
 CREATE TABLE IF NOT EXISTS macro_points (
   series_id TEXT NOT NULL,
   ts_utc TIMESTAMP NOT NULL,
+  calendar_date DATE,
+  day_of_week INTEGER,
+  day_name TEXT,
+  is_weekend BOOLEAN,
+  is_market_holiday BOOLEAN,
+  is_trading_day BOOLEAN,
+  market_calendar_state TEXT,
+  last_cash_session_date DATE,
   as_of_utc TIMESTAMP NOT NULL,
   value DOUBLE,
   source TEXT NOT NULL,
@@ -183,7 +260,7 @@ CREATE TABLE IF NOT EXISTS macro_points (
   PRIMARY KEY (series_id, ts_utc)
 );
 
--- 12) Feature store (narrow + versioned)
+-- 13) Feature store (narrow + versioned)
 CREATE TABLE IF NOT EXISTS feature_values (
   run_id TEXT NOT NULL,
   symbol TEXT NOT NULL,
@@ -199,7 +276,7 @@ CREATE TABLE IF NOT EXISTS feature_values (
   FOREIGN KEY (symbol) REFERENCES instruments(symbol)
 );
 
--- 13) News pull usage log (request budgeting)
+-- 14) News pull usage log (request budgeting)
 CREATE TABLE IF NOT EXISTS news_pull_usage (
   usage_id TEXT PRIMARY KEY,
   provider TEXT NOT NULL,
@@ -207,6 +284,13 @@ CREATE TABLE IF NOT EXISTS news_pull_usage (
   symbols_csv TEXT NOT NULL,
   request_count INTEGER NOT NULL,
   request_date_utc DATE NOT NULL,
+  day_of_week INTEGER,
+  day_name TEXT,
+  is_weekend BOOLEAN,
+  is_market_holiday BOOLEAN,
+  is_trading_day BOOLEAN,
+  market_calendar_state TEXT,
+  last_cash_session_date DATE,
   response_status TEXT NOT NULL,         -- success, http_error, limit_reached
   detail TEXT,
   new_events_upserted INTEGER NOT NULL DEFAULT 0,
@@ -214,7 +298,7 @@ CREATE TABLE IF NOT EXISTS news_pull_usage (
   created_at_utc TIMESTAMP NOT NULL
 );
 
--- 14) LLM news interpretations (interpretation only; no calculations)
+-- 15) LLM news interpretations (interpretation only; no calculations)
 CREATE TABLE IF NOT EXISTS news_interpretations (
   provider TEXT NOT NULL,
   provider_news_id TEXT NOT NULL,
@@ -224,6 +308,14 @@ CREATE TABLE IF NOT EXISTS news_interpretations (
   impact_scope TEXT NOT NULL,            -- macro, rates, energy, semis, usd, risk_sentiment, multiple
   impact_direction TEXT NOT NULL,        -- risk_on, risk_off, bullish_semis, bearish_semis, mixed, unclear
   impact_horizon TEXT NOT NULL,          -- intraday, 1to3d, 1to2w
+  calendar_date DATE,
+  day_of_week INTEGER,
+  day_name TEXT,
+  is_weekend BOOLEAN,
+  is_market_holiday BOOLEAN,
+  is_trading_day BOOLEAN,
+  market_calendar_state TEXT,
+  last_cash_session_date DATE,
   relevance_symbols_json TEXT NOT NULL,  -- JSON list
   thesis_tags_json TEXT NOT NULL,        -- JSON list
   market_impact_note TEXT NOT NULL,
@@ -234,4 +326,18 @@ CREATE TABLE IF NOT EXISTS news_interpretations (
   ingested_at_utc TIMESTAMP NOT NULL,
   PRIMARY KEY (provider, provider_news_id, model, prompt_version),
   FOREIGN KEY (provider, provider_news_id) REFERENCES news_events(provider, provider_news_id)
+);
+
+CREATE TABLE IF NOT EXISTS news_interpretation_rejections (
+  provider TEXT NOT NULL,
+  provider_news_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  rejection_reason TEXT NOT NULL,
+  raw_impact_scope TEXT,
+  raw_payload_json TEXT NOT NULL,
+  normalized_payload_json TEXT NOT NULL,
+  logged_at_utc TIMESTAMP NOT NULL,
+  ingested_at_utc TIMESTAMP NOT NULL,
+  PRIMARY KEY (provider, provider_news_id, model, prompt_version)
 );

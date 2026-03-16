@@ -1,0 +1,930 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from statistics import pstdev
+from zoneinfo import ZoneInfo
+
+from tradly.models.calibration import (
+    ConfidenceInputs,
+    apply_freshness_cap,
+    assess_latency,
+    audit_model_artifact,
+    compute_confidence,
+    confidence_label,
+    normalize_score,
+)
+from tradly.services.db_time import from_db_utc
+from tradly.services.market_calendar import (
+    build_trading_calendar_row,
+    horizon_execution_ready,
+    market_closed_reason_code,
+    market_session_state,
+    previous_trading_day,
+)
+
+
+MARKET_TZ = ZoneInfo("America/New_York")
+CORE_REGIME_SYMBOLS = ("SPY", "QQQ", "VIXY", "TLT", "IEF", "SHY")
+MACRO_PROXY_SYMBOLS = ("IWM", "XLE", "XLP", "XLU", "XLV")
+REGIME_SYMBOLS = CORE_REGIME_SYMBOLS + MACRO_PROXY_SYMBOLS
+MIN_DAILY_BARS = 61
+VALID_DATA_STATUS = {"REALTIME", "DELAYED"}
+MAX_MACRO_AGE_DAYS = 2
+MAX_MACRO_NEWS_AGE_HOURS = 24
+RAW_SCORE_SCALE = 12.0
+INTRADAY_OVERLAY_SCALE = 4.0
+MACRO_HOSTILITY_SCORE_LIMIT = 30.0
+LANE_TO_HORIZON = {
+    "near_term": "1to3d",
+    "swing_term": "1to2w",
+    "position_term": "2to6w",
+}
+
+
+@dataclass(frozen=True)
+class Bar:
+    ts_utc: datetime
+    close: float
+    volume: float | None
+    data_status: str | None
+
+
+@dataclass(frozen=True)
+class IntradayBar:
+    ts_utc: datetime
+    close: float
+    volume: float | None
+    data_status: str | None
+
+
+@dataclass(frozen=True)
+class SnapshotPoint:
+    as_of_utc: datetime
+    last_trade_price: float | None
+    prev_close: float | None
+    change_pct: float | None
+    day_vwap: float | None
+    market_status: str | None
+    data_status: str | None
+
+
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(value, high))
+
+
+def _market_date_from_db_ts(ts: datetime) -> datetime.date:
+    return from_db_utc(ts).astimezone(MARKET_TZ).date()
+
+
+def _latest_close_r20_r60(bars: list[Bar]) -> tuple[float, float, float]:
+    closes = [bar.close for bar in bars]
+    return closes[-1], closes[-1] / closes[-21] - 1.0, closes[-1] / closes[-61] - 1.0
+
+
+def _returns(closes: list[float]) -> list[float]:
+    out: list[float] = []
+    for idx in range(1, len(closes)):
+        prev = closes[idx - 1]
+        curr = closes[idx]
+        out.append(0.0 if prev <= 0 else curr / prev - 1.0)
+    return out
+
+
+def _latest_intraday_return(
+    *,
+    symbol: str,
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]],
+    daily_close: float,
+) -> tuple[float | None, datetime | None]:
+    bars = intraday_bars_by_symbol.get(symbol, [])
+    if not bars or daily_close <= 0:
+        return None, None
+    latest = bars[-1]
+    status = (latest.data_status or "").upper()
+    if status not in VALID_DATA_STATUS:
+        return None, None
+    return latest.close / daily_close - 1.0, latest.ts_utc
+
+
+def _snapshot_change_pct(snapshot: SnapshotPoint | None) -> float | None:
+    if snapshot is None:
+        return None
+    if snapshot.change_pct is not None:
+        return snapshot.change_pct / 100.0
+    if snapshot.last_trade_price is None or snapshot.prev_close is None or snapshot.prev_close <= 0:
+        return None
+    return snapshot.last_trade_price / snapshot.prev_close - 1.0
+
+
+def _intraday_overlay_inputs(
+    *,
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]],
+    latest_snapshots_by_symbol: dict[str, SnapshotPoint],
+    latest_closes: dict[str, float],
+) -> tuple[dict[str, float | str | None], datetime | None, datetime | None]:
+    spy_intraday_return_pct, spy_latest_intraday_ts = _latest_intraday_return(
+        symbol="SPY",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["SPY"],
+    )
+    qqq_intraday_return_pct, qqq_latest_intraday_ts = _latest_intraday_return(
+        symbol="QQQ",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["QQQ"],
+    )
+    vixy_intraday_return_pct, vixy_latest_intraday_ts = _latest_intraday_return(
+        symbol="VIXY",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["VIXY"],
+    )
+    tlt_intraday_return_pct, tlt_latest_intraday_ts = _latest_intraday_return(
+        symbol="TLT",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["TLT"],
+    )
+    ief_intraday_return_pct, ief_latest_intraday_ts = _latest_intraday_return(
+        symbol="IEF",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["IEF"],
+    )
+    shy_intraday_return_pct, shy_latest_intraday_ts = _latest_intraday_return(
+        symbol="SHY",
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        daily_close=latest_closes["SHY"],
+    )
+
+    latest_intraday_ts = max(
+        (
+            ts
+            for ts in (
+                spy_latest_intraday_ts,
+                qqq_latest_intraday_ts,
+                vixy_latest_intraday_ts,
+                tlt_latest_intraday_ts,
+                ief_latest_intraday_ts,
+                shy_latest_intraday_ts,
+            )
+            if ts is not None
+        ),
+        default=None,
+    )
+
+    spy_snapshot = latest_snapshots_by_symbol.get("SPY")
+    qqq_snapshot = latest_snapshots_by_symbol.get("QQQ")
+    vixy_snapshot = latest_snapshots_by_symbol.get("VIXY")
+    latest_snapshot_ts = max(
+        (
+            point.as_of_utc
+            for point in (spy_snapshot, qqq_snapshot, vixy_snapshot)
+            if point is not None and (point.data_status or "").upper() in VALID_DATA_STATUS
+        ),
+        default=None,
+    )
+
+    return (
+        {
+            "spy_intraday_return_pct": spy_intraday_return_pct,
+            "qqq_intraday_return_pct": qqq_intraday_return_pct,
+            "vixy_intraday_return_pct": vixy_intraday_return_pct,
+            "tlt_intraday_return_pct": tlt_intraday_return_pct,
+            "ief_intraday_return_pct": ief_intraday_return_pct,
+            "shy_intraday_return_pct": shy_intraday_return_pct,
+            "spy_snapshot_change_pct": _snapshot_change_pct(spy_snapshot),
+            "qqq_snapshot_change_pct": _snapshot_change_pct(qqq_snapshot),
+            "vixy_snapshot_change_pct": _snapshot_change_pct(vixy_snapshot),
+        },
+        latest_intraday_ts,
+        latest_snapshot_ts,
+    )
+
+
+def _build_intraday_overlay(
+    *,
+    intraday_metrics: dict[str, float | str | None],
+) -> tuple[str, str, float, list[str]]:
+    spy_intraday_return_pct = intraday_metrics.get("spy_intraday_return_pct")
+    qqq_intraday_return_pct = intraday_metrics.get("qqq_intraday_return_pct")
+    vixy_intraday_return_pct = intraday_metrics.get("vixy_intraday_return_pct")
+    spy_snapshot_change_pct = intraday_metrics.get("spy_snapshot_change_pct")
+    qqq_snapshot_change_pct = intraday_metrics.get("qqq_snapshot_change_pct")
+    vixy_snapshot_change_pct = intraday_metrics.get("vixy_snapshot_change_pct")
+
+    core_values = [spy_intraday_return_pct, qqq_intraday_return_pct, vixy_intraday_return_pct]
+    has_intraday = any(isinstance(value, float) for value in core_values)
+    has_snapshot = any(
+        isinstance(value, float) for value in (spy_snapshot_change_pct, qqq_snapshot_change_pct, vixy_snapshot_change_pct)
+    )
+    if not has_intraday and not has_snapshot:
+        return "unavailable", "unavailable", 0.0, ["intraday_overlay_unavailable"]
+    overlay_freshness = "minute_confirmed" if has_intraday else "snapshot_only"
+
+    pos = 0
+    neg = 0
+    why_code: list[str] = []
+
+    if isinstance(spy_intraday_return_pct, float):
+        if spy_intraday_return_pct > 0.002:
+            pos += 1
+        elif spy_intraday_return_pct < -0.002:
+            neg += 1
+    if isinstance(qqq_intraday_return_pct, float):
+        if qqq_intraday_return_pct > 0.001:
+            pos += 1
+        elif qqq_intraday_return_pct < -0.001:
+            neg += 1
+    if isinstance(vixy_intraday_return_pct, float):
+        if vixy_intraday_return_pct > 0.03:
+            neg += 1
+        elif vixy_intraday_return_pct < -0.03:
+            pos += 1
+
+    if isinstance(spy_snapshot_change_pct, float) and spy_snapshot_change_pct > 0.0:
+        pos += 1
+        why_code.append("snapshot_confirms_risk_on")
+    elif isinstance(spy_snapshot_change_pct, float) and spy_snapshot_change_pct < 0.0:
+        neg += 1
+        why_code.append("snapshot_confirms_risk_off")
+
+    if isinstance(qqq_snapshot_change_pct, float) and qqq_snapshot_change_pct > 0.0:
+        pos += 1
+    elif isinstance(qqq_snapshot_change_pct, float) and qqq_snapshot_change_pct < 0.0:
+        neg += 1
+
+    if isinstance(vixy_snapshot_change_pct, float):
+        if vixy_snapshot_change_pct > 0.02:
+            neg += 1
+        elif vixy_snapshot_change_pct < -0.02:
+            pos += 1
+
+    if pos >= neg + 2:
+        state = "supportive"
+        score = INTRADAY_OVERLAY_SCALE
+        why_code.insert(0, "intraday_tape_supportive")
+    elif neg >= pos + 2:
+        state = "risk_off"
+        score = -INTRADAY_OVERLAY_SCALE
+        why_code.insert(0, "intraday_tape_risk_off")
+    else:
+        state = "mixed"
+        score = 0.0
+        why_code.insert(0, "intraday_tape_mixed")
+
+    return state, overlay_freshness, score, why_code
+
+
+def _coverage_state(required_symbols_present: int, latest_market_date_ok: bool) -> str:
+    if required_symbols_present < len(CORE_REGIME_SYMBOLS):
+        return "insufficient_evidence"
+    if not latest_market_date_ok:
+        return "thin_evidence"
+    return "sufficient_evidence"
+
+
+def _merge_forced_coverage_state(base_state: str, forced_state: str | None) -> str:
+    if forced_state is None:
+        return base_state
+    forced_priority = {"insufficient_evidence": 0, "thin_evidence": 1, "sufficient_evidence": 2}
+    if forced_priority[forced_state] < forced_priority[base_state]:
+        return forced_state
+    return base_state
+
+
+def _metric(buckets: dict[str, dict[str, float]], symbol: str, key: str) -> float | None:
+    metric = buckets.get(symbol)
+    if metric is None:
+        return None
+    value = metric.get(key)
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _average(values: list[float | None]) -> float | None:
+    usable = [float(value) for value in values if isinstance(value, (int, float))]
+    if not usable:
+        return None
+    return sum(usable) / len(usable)
+
+
+def _macro_hostility(
+    *,
+    proxy_metrics: dict[str, dict[str, float]],
+    intraday_overlay_state: str,
+    intraday_overlay_freshness: str,
+) -> tuple[dict[str, object], float, list[str]]:
+    conflict_flags: list[str] = []
+    why_code: list[str] = []
+    availability: dict[str, str] = {}
+
+    risk_r20_avg = _average([_metric(proxy_metrics, "SPY", "r20"), _metric(proxy_metrics, "QQQ", "r20"), _metric(proxy_metrics, "IWM", "r20")])
+    risk_r60_avg = _average([_metric(proxy_metrics, "SPY", "r60"), _metric(proxy_metrics, "QQQ", "r60"), _metric(proxy_metrics, "IWM", "r60")])
+    if risk_r20_avg is None or risk_r60_avg is None:
+        risk_appetite_state = "unavailable"
+        availability["risk_appetite_state"] = "missing_proxies"
+    elif risk_r20_avg >= 0.02 and risk_r60_avg >= 0.04:
+        risk_appetite_state = "risk_on"
+        availability["risk_appetite_state"] = "daily"
+    elif risk_r20_avg <= -0.02 or risk_r60_avg <= -0.04:
+        risk_appetite_state = "risk_off"
+        availability["risk_appetite_state"] = "daily"
+    else:
+        risk_appetite_state = "unstable"
+        availability["risk_appetite_state"] = "daily"
+
+    if risk_appetite_state != "unavailable":
+        if intraday_overlay_state == "risk_off":
+            risk_appetite_state = "risk_off" if risk_appetite_state != "risk_on" else "unstable"
+            availability["risk_appetite_state"] = intraday_overlay_freshness
+        elif intraday_overlay_state == "supportive":
+            if risk_appetite_state == "risk_off":
+                risk_appetite_state = "unstable"
+            elif risk_appetite_state == "unstable":
+                risk_appetite_state = "risk_on"
+            availability["risk_appetite_state"] = intraday_overlay_freshness
+
+    tlt_r20 = _metric(proxy_metrics, "TLT", "r20")
+    ief_r20 = _metric(proxy_metrics, "IEF", "r20")
+    if tlt_r20 is None or ief_r20 is None:
+        rates_pressure_state = "unavailable"
+        availability["rates_pressure_state"] = "missing_proxies"
+    elif tlt_r20 >= 0.01 and ief_r20 >= 0.0:
+        rates_pressure_state = "supportive"
+        availability["rates_pressure_state"] = "daily"
+    elif tlt_r20 <= -0.02 or (tlt_r20 <= -0.01 and ief_r20 <= -0.005):
+        rates_pressure_state = "pressuring"
+        availability["rates_pressure_state"] = "daily"
+    else:
+        rates_pressure_state = "mixed"
+        availability["rates_pressure_state"] = "daily"
+
+    xle_r20 = _metric(proxy_metrics, "XLE", "r20")
+    broad_r20_avg = risk_r20_avg
+    xle_relative_r20 = xle_r20 - broad_r20_avg if xle_r20 is not None and broad_r20_avg is not None else None
+    if xle_relative_r20 is None or risk_appetite_state == "unavailable":
+        energy_stress_state = "unavailable"
+        availability["energy_stress_state"] = "missing_proxies"
+    elif xle_relative_r20 >= 0.03 and risk_appetite_state in {"unstable", "risk_off"}:
+        energy_stress_state = "stress"
+        availability["energy_stress_state"] = "proxy_daily"
+    elif xle_relative_r20 >= 0.015:
+        energy_stress_state = "elevated"
+        availability["energy_stress_state"] = "proxy_daily"
+    else:
+        energy_stress_state = "contained"
+        availability["energy_stress_state"] = "proxy_daily"
+
+    defensive_r20_avg = _average([
+        _metric(proxy_metrics, "XLP", "r20"),
+        _metric(proxy_metrics, "XLU", "r20"),
+        _metric(proxy_metrics, "XLV", "r20"),
+    ])
+    defensive_relative_r20 = defensive_r20_avg - broad_r20_avg if defensive_r20_avg is not None and broad_r20_avg is not None else None
+    if defensive_relative_r20 is None:
+        defensive_rotation_state = "unavailable"
+        availability["defensive_rotation_state"] = "missing_proxies"
+    elif defensive_relative_r20 >= 0.015:
+        defensive_rotation_state = "defensive_leadership"
+        availability["defensive_rotation_state"] = "daily"
+    elif defensive_relative_r20 <= -0.015:
+        defensive_rotation_state = "cyclical_leadership"
+        availability["defensive_rotation_state"] = "daily"
+    else:
+        defensive_rotation_state = "mixed"
+        availability["defensive_rotation_state"] = "daily"
+
+    unavailable_count = sum(
+        1
+        for state in (
+            risk_appetite_state,
+            rates_pressure_state,
+            energy_stress_state,
+            defensive_rotation_state,
+        )
+        if state == "unavailable"
+    )
+
+    score = 0.0
+    score += {"risk_on": 10.0, "unstable": 0.0, "risk_off": -10.0, "unavailable": 0.0}[risk_appetite_state]
+    score += {"supportive": 6.0, "mixed": 0.0, "pressuring": -6.0, "unavailable": 0.0}[rates_pressure_state]
+    score += {"contained": 0.0, "elevated": -4.0, "stress": -8.0, "unavailable": 0.0}[energy_stress_state]
+    score += {"cyclical_leadership": 6.0, "mixed": 0.0, "defensive_leadership": -6.0, "unavailable": 0.0}[defensive_rotation_state]
+    score = clamp(score, -MACRO_HOSTILITY_SCORE_LIMIT, MACRO_HOSTILITY_SCORE_LIMIT)
+
+    if unavailable_count >= 2:
+        macro_state = "macro_unstable"
+        conflict_flags.append("macro_proxy_coverage_incomplete")
+    elif risk_appetite_state == "risk_off" and (
+        rates_pressure_state == "pressuring"
+        or energy_stress_state == "stress"
+        or defensive_rotation_state == "defensive_leadership"
+    ):
+        macro_state = "risk_off"
+    elif (
+        risk_appetite_state == "risk_on"
+        and rates_pressure_state != "pressuring"
+        and defensive_rotation_state != "defensive_leadership"
+        and energy_stress_state != "stress"
+    ):
+        macro_state = "risk_on_confirmed"
+    else:
+        macro_state = "macro_unstable"
+
+    if risk_appetite_state == "risk_off":
+        why_code.append("macro_risk_appetite_risk_off")
+    elif risk_appetite_state == "unstable":
+        why_code.append("macro_risk_appetite_unstable")
+    elif risk_appetite_state == "risk_on":
+        why_code.append("macro_risk_on_confirmed")
+
+    if rates_pressure_state == "pressuring":
+        why_code.append("macro_rates_pressure")
+    if energy_stress_state == "stress":
+        why_code.append("macro_energy_stress")
+    if defensive_rotation_state == "defensive_leadership":
+        why_code.append("macro_defensive_rotation")
+    if macro_state == "macro_unstable":
+        why_code.append("macro_hostility_mixed")
+
+    if (
+        risk_appetite_state == "risk_on"
+        and (rates_pressure_state == "pressuring" or defensive_rotation_state == "defensive_leadership")
+    ):
+        conflict_flags.append("risk_on_vs_macro_drag")
+    if energy_stress_state in {"elevated", "stress"} and defensive_rotation_state == "cyclical_leadership":
+        conflict_flags.append("energy_stress_vs_cyclical_rotation")
+
+    macro_intraday_freshness = intraday_overlay_freshness if intraday_overlay_freshness != "unavailable" else "daily_only"
+
+    return (
+        {
+            "macro_state": macro_state,
+            "risk_appetite_state": risk_appetite_state,
+            "rates_pressure_state": rates_pressure_state,
+            "energy_stress_state": energy_stress_state,
+            "defensive_rotation_state": defensive_rotation_state,
+            "macro_hostility_score": round(score, 4),
+            "latest_macro_proxy_ts_utc": None,
+            "daily_proxy_metrics": {
+                "risk_r20_avg": round(risk_r20_avg, 6) if risk_r20_avg is not None else None,
+                "risk_r60_avg": round(risk_r60_avg, 6) if risk_r60_avg is not None else None,
+                "xle_relative_r20": round(xle_relative_r20, 6) if xle_relative_r20 is not None else None,
+                "defensive_relative_r20": round(defensive_relative_r20, 6) if defensive_relative_r20 is not None else None,
+                "tlt_r20": round(tlt_r20, 6) if tlt_r20 is not None else None,
+                "ief_r20": round(ief_r20, 6) if ief_r20 is not None else None,
+            },
+            "intraday_proxy_metrics": {
+                "intraday_overlay_state": intraday_overlay_state,
+                "intraday_overlay_freshness": intraday_overlay_freshness,
+            },
+            "macro_signal_availability": availability,
+            "macro_intraday_freshness": macro_intraday_freshness,
+            "macro_conflict_flags": conflict_flags,
+        },
+        score,
+        why_code,
+    )
+
+
+def build_market_regime_row(
+    *,
+    bars_by_symbol: dict[str, list[Bar]],
+    now_utc: datetime,
+    latest_macro_ts_utc: datetime | None,
+    latest_macro_news_ts_utc: datetime | None,
+    intraday_bars_by_symbol: dict[str, list[IntradayBar]] | None = None,
+    latest_snapshots_by_symbol: dict[str, SnapshotPoint] | None = None,
+) -> dict:
+    intraday_bars_by_symbol = intraday_bars_by_symbol or {}
+    latest_snapshots_by_symbol = latest_snapshots_by_symbol or {}
+    evidence: dict[str, object] = {}
+    why_code: list[str] = []
+    missing_symbols: list[str] = []
+    latest_by_symbol: dict[str, datetime] = {}
+    latest_closes: dict[str, float] = {}
+    r20_by_symbol: dict[str, float] = {}
+    latest_status_by_symbol: dict[str, str] = {}
+    feature_signs: list[int] = []
+
+    for symbol in REGIME_SYMBOLS:
+        bars = bars_by_symbol.get(symbol, [])
+        if len(bars) < MIN_DAILY_BARS:
+            if symbol in CORE_REGIME_SYMBOLS:
+                missing_symbols.append(symbol)
+            continue
+        latest = bars[-1]
+        status = (latest.data_status or "").upper()
+        if status not in VALID_DATA_STATUS:
+            if symbol in CORE_REGIME_SYMBOLS:
+                missing_symbols.append(symbol)
+            continue
+        latest_close, r20, r60 = _latest_close_r20_r60(bars)
+        latest_by_symbol[symbol] = latest.ts_utc
+        latest_closes[symbol] = latest_close
+        r20_by_symbol[symbol] = r20
+        evidence[f"{symbol.lower()}_r60"] = round(r60, 6)
+        evidence[f"{symbol.lower()}_r20"] = round(r20, 6)
+        evidence.setdefault("proxy_metrics", {})[symbol] = {"r20": r20, "r60": r60, "close": latest_close}
+        latest_status_by_symbol[symbol] = status
+        evidence[f"{symbol.lower()}_latest_close"] = round(latest_close, 4)
+
+    required_symbols_present = sum(1 for symbol in CORE_REGIME_SYMBOLS if symbol in latest_by_symbol)
+    total_symbols_present = len(latest_by_symbol)
+    if required_symbols_present < len(CORE_REGIME_SYMBOLS):
+        return {
+            "model_id": "market_regime_v1",
+            "model_scope": "market",
+            "scope_id": "US_BROAD_MARKET",
+            "horizon_primary": "1to3d",
+            "horizon_secondary": ["1to2w", "2to6w"],
+            "signal_direction": "neutral",
+            "signal_strength": 0.0,
+            "confidence_score": 20,
+            "confidence_label": "low",
+            "coverage_state": "insufficient_evidence",
+            "score_raw": 0.0,
+            "score_normalized": 0.0,
+            "why_code": ["regime_inputs_missing"],
+            "evidence": {
+                "missing_symbols": missing_symbols,
+                "required_symbols": list(CORE_REGIME_SYMBOLS),
+                "macro_proxy_symbols": list(MACRO_PROXY_SYMBOLS),
+            },
+            "as_of_utc": now_utc.isoformat(),
+            "data_freshness_ok": False,
+        }
+
+    global_latest_utc = max(latest_by_symbol.values())
+    latest_market_date = _market_date_from_db_ts(global_latest_utc)
+    expected_min_market_date = previous_trading_day(now_utc.astimezone(MARKET_TZ).date())
+    latest_market_date_ok = latest_market_date >= expected_min_market_date
+    calendar_row = build_trading_calendar_row(now_utc.astimezone(MARKET_TZ).date())
+    current_market_session = market_session_state(now_utc)
+    market_data_statuses = sorted(set(latest_status_by_symbol.values()))
+    market_data_status = "DELAYED" if "DELAYED" in market_data_statuses else "REALTIME"
+    macro_data_missing = latest_macro_ts_utc is None
+    macro_news_missing = latest_macro_news_ts_utc is None
+    macro_age_days = None
+    macro_news_age_hours = None
+    macro_data_fresh = False
+    macro_news_fresh = False
+    if latest_macro_ts_utc is not None:
+        macro_ts = from_db_utc(latest_macro_ts_utc)
+        macro_age_days = int((now_utc.date() - macro_ts.date()).days)
+        macro_data_fresh = macro_age_days <= MAX_MACRO_AGE_DAYS
+    if latest_macro_news_ts_utc is not None:
+        macro_news_ts = from_db_utc(latest_macro_news_ts_utc)
+        macro_news_age_hours = (now_utc - macro_news_ts).total_seconds() / 3600.0
+        macro_news_fresh = macro_news_age_hours <= MAX_MACRO_NEWS_AGE_HOURS
+
+    vix_proxy_bars = bars_by_symbol["VIXY"]
+    vix_proxy_level = latest_closes["VIXY"]
+    vix_proxy_5d_change = vix_proxy_level / vix_proxy_bars[-6].close - 1.0
+    spy_r20 = r20_by_symbol["SPY"]
+    qqq_r20 = r20_by_symbol["QQQ"]
+    tlt_r20 = r20_by_symbol["TLT"]
+    ief_r20 = r20_by_symbol["IEF"]
+    shy_r20 = r20_by_symbol["SHY"]
+
+    if spy_r20 > 0:
+        feature_signs.append(1)
+    elif spy_r20 < 0:
+        feature_signs.append(-1)
+    if qqq_r20 > 0:
+        feature_signs.append(1)
+    elif qqq_r20 < 0:
+        feature_signs.append(-1)
+    if vix_proxy_5d_change > 0.05:
+        feature_signs.append(-1)
+    elif vix_proxy_5d_change < -0.05:
+        feature_signs.append(1)
+    if tlt_r20 > shy_r20:
+        feature_signs.append(-1)
+    elif tlt_r20 < shy_r20:
+        feature_signs.append(1)
+
+    penalties: list[tuple[str, float]] = []
+    supports: list[tuple[str, float]] = []
+    if spy_r20 < -0.03:
+        penalties.append(("spy_weak_20d", 8.0))
+    elif spy_r20 > 0.03:
+        supports.append(("spy_strong_20d", 8.0))
+    if qqq_r20 < -0.04:
+        penalties.append(("qqq_weak_20d", 6.0))
+    elif qqq_r20 > 0.04:
+        supports.append(("qqq_strong_20d", 6.0))
+    if vix_proxy_level > 35:
+        penalties.append(("vix_extreme", 10.0))
+    elif vix_proxy_level > 25:
+        penalties.append(("vix_elevated", 6.0))
+    elif vix_proxy_level < 18:
+        supports.append(("vix_calm", 4.0))
+    if vix_proxy_5d_change > 0.15:
+        penalties.append(("vix_rising_fast", 4.0))
+    elif vix_proxy_5d_change < -0.10:
+        supports.append(("vix_falling", 3.0))
+    if tlt_r20 > 0.04 and spy_r20 < 0:
+        penalties.append(("risk_off_bond_bid", 4.0))
+    elif tlt_r20 < 0 and spy_r20 > 0:
+        supports.append(("bond_bid_absent", 2.0))
+
+    daily_raw_score = sum(value for _, value in supports) - sum(value for _, value in penalties)
+    intraday_metrics, latest_intraday_ts, latest_snapshot_ts = _intraday_overlay_inputs(
+        intraday_bars_by_symbol=intraday_bars_by_symbol,
+        latest_snapshots_by_symbol=latest_snapshots_by_symbol,
+        latest_closes=latest_closes,
+    )
+    intraday_overlay_state, intraday_overlay_freshness, intraday_overlay_score, intraday_overlay_why_code = _build_intraday_overlay(
+        intraday_metrics=intraday_metrics
+    )
+    macro_hostility, macro_hostility_score, macro_hostility_why_code = _macro_hostility(
+        proxy_metrics=evidence.get("proxy_metrics", {}),
+        intraday_overlay_state=intraday_overlay_state,
+        intraday_overlay_freshness=intraday_overlay_freshness,
+    )
+    macro_hostility["latest_macro_proxy_ts_utc"] = from_db_utc(global_latest_utc).isoformat()
+    raw_score = daily_raw_score + intraday_overlay_score + (macro_hostility_score / 10.0)
+    score_normalized = normalize_score(score_raw=raw_score, raw_scale=RAW_SCORE_SCALE)
+    signal_strength = round(abs(score_normalized) / 100.0, 4)
+
+    if score_normalized >= 15:
+        signal_direction = "bullish"
+    elif score_normalized <= -15:
+        signal_direction = "bearish"
+    else:
+        signal_direction = "neutral"
+
+    if signal_direction == "bullish":
+        why_code.extend(label for label, _ in supports[:3])
+    elif signal_direction == "bearish":
+        why_code.extend(label for label, _ in penalties[:3])
+    else:
+        why_code.append("regime_mixed")
+    for code in intraday_overlay_why_code:
+        if code not in why_code:
+            why_code.append(code)
+    for code in macro_hostility_why_code:
+        if code not in why_code:
+            why_code.append(code)
+
+    evidence_density_score = round(total_symbols_present / len(REGIME_SYMBOLS) * 100)
+    pos = sum(1 for sign in feature_signs if sign > 0)
+    neg = sum(1 for sign in feature_signs if sign < 0)
+    total_signals = pos + neg
+    feature_agreement_score = round((max(pos, neg) / total_signals) * 100) if total_signals else 0
+    vix_returns = _returns([bar.close for bar in vix_proxy_bars[-21:]])
+    vix_vol = pstdev(vix_returns) if len(vix_returns) >= 2 else 0.0
+    stability_score = round(clamp(100.0 - vix_vol * 800.0, 20.0, 100.0))
+    base_coverage_state = _coverage_state(required_symbols_present, latest_market_date_ok)
+
+    def _build_lane(lane_id: str) -> dict[str, object]:
+        horizon = LANE_TO_HORIZON[lane_id]
+        lane_execution_ready = horizon_execution_ready(horizon=horizon, now_utc=now_utc)
+        assessment = assess_latency(
+            data_status=market_data_status,
+            recency_ok=latest_market_date_ok,
+            horizon=horizon,  # type: ignore[arg-type]
+        )
+        coverage_state = _merge_forced_coverage_state(base_coverage_state, assessment.forced_coverage_state)
+        lane_why_code: list[str] = list(why_code)
+
+        if macro_data_missing or macro_news_missing:
+            coverage_state = "insufficient_evidence"
+        elif lane_id == "near_term":
+            if not macro_data_fresh or not macro_news_fresh:
+                coverage_state = "thin_evidence" if coverage_state == "sufficient_evidence" else coverage_state
+        elif lane_id == "swing_term":
+            if not macro_news_fresh:
+                coverage_state = "thin_evidence" if coverage_state == "sufficient_evidence" else coverage_state
+        else:
+            # Position horizons should tolerate slower macro/news cadence unless inputs are fully missing.
+            coverage_state = coverage_state
+
+        freshness_score = 100 if latest_market_date_ok else 55
+        freshness_score = apply_freshness_cap(freshness_score=freshness_score, assessment=assessment)
+        if macro_data_missing or macro_news_missing:
+            freshness_score = min(freshness_score, 25)
+        elif lane_id == "near_term":
+            if not macro_data_fresh or not macro_news_fresh:
+                freshness_score = min(freshness_score, 60)
+        elif lane_id == "swing_term":
+            if not macro_data_fresh:
+                freshness_score = min(freshness_score, 80)
+            if not macro_news_fresh:
+                freshness_score = min(freshness_score, 70)
+        else:
+            if not macro_data_fresh:
+                freshness_score = min(freshness_score, 90)
+            if not macro_news_fresh:
+                freshness_score = min(freshness_score, 85)
+
+        if coverage_state == "sufficient_evidence":
+            coverage_score = 100
+        elif coverage_state == "thin_evidence":
+            coverage_score = 49
+        else:
+            coverage_score = 25
+
+        confidence_score = compute_confidence(
+            ConfidenceInputs(
+                evidence_density_score=evidence_density_score,
+                feature_agreement_score=feature_agreement_score,
+                freshness_score=freshness_score,
+                stability_score=stability_score,
+                coverage_score=coverage_score,
+                coverage_state=coverage_state,
+                signal_strength=signal_strength,
+                informative_feature_count=4,
+                independent_informative_feature_count=4,
+            ),
+            assessment=assessment,
+        )
+
+        if coverage_state != "sufficient_evidence":
+            lane_why_code.append("market_data_stale")
+        calendar_reason = market_closed_reason_code(now_utc=now_utc)
+        if not lane_execution_ready and calendar_reason is not None:
+            lane_why_code.append(calendar_reason)
+        for code in assessment.why_code:
+            if code not in lane_why_code:
+                lane_why_code.append(code)
+        if macro_data_missing:
+            lane_why_code.append("macro_input_missing")
+        elif not macro_data_fresh:
+            lane_why_code.append(
+                "macro_input_stale"
+                if lane_id == "near_term"
+                else "macro_input_warning"
+                if lane_id == "swing_term"
+                else "macro_input_slow_ok"
+            )
+        if macro_news_missing:
+            lane_why_code.append("macro_news_missing")
+        elif not macro_news_fresh:
+            lane_why_code.append(
+                "macro_news_stale"
+                if lane_id == "near_term"
+                else "macro_news_warning"
+                if lane_id == "swing_term"
+                else "macro_news_slow_ok"
+            )
+
+        return {
+            "lane_id": lane_id,
+            "canonical_horizon": horizon,
+            "confidence_score": confidence_score,
+            "confidence_label": confidence_label(confidence_score),
+            "coverage_state": coverage_state,
+            "freshness_score": freshness_score,
+            "coverage_score": coverage_score,
+            "latency_assessment": assessment.to_dict(),
+            "why_code": lane_why_code,
+            "market_session_state": current_market_session,
+            "lane_execution_ready": lane_execution_ready,
+            "lane_data_freshness_ok": (
+                latest_market_date_ok
+                and not macro_data_missing
+                and not macro_news_missing
+                and (
+                    (lane_id == "near_term" and macro_data_fresh and macro_news_fresh)
+                    or (lane_id == "swing_term" and macro_news_fresh)
+                    or (lane_id == "position_term")
+                )
+            ),
+        }
+
+    lane_diagnostics = {
+        "near_term": _build_lane("near_term"),
+        "swing_term": _build_lane("swing_term"),
+        "position_term": _build_lane("position_term"),
+    }
+
+    near_term_lane = lane_diagnostics["near_term"]
+    swing_term_lane = lane_diagnostics["swing_term"]
+    position_term_lane = lane_diagnostics["position_term"]
+    if (
+        near_term_lane["coverage_state"] != "sufficient_evidence"
+        and swing_term_lane["coverage_state"] == "sufficient_evidence"
+    ):
+        primary_lane_id = "swing_term"
+    elif (
+        near_term_lane["coverage_state"] != "sufficient_evidence"
+        and swing_term_lane["coverage_state"] != "sufficient_evidence"
+        and position_term_lane["coverage_state"] == "sufficient_evidence"
+    ):
+        primary_lane_id = "position_term"
+    else:
+        primary_lane_id = "near_term" if abs(score_normalized) >= 40 or vix_proxy_level > 25 else "swing_term"
+    secondary_lane_ids = [lane_id for lane_id in ("near_term", "swing_term", "position_term") if lane_id != primary_lane_id]
+    primary_lane = lane_diagnostics[primary_lane_id]
+
+    confidence_score = int(primary_lane["confidence_score"])
+    confidence_label_value = str(primary_lane["confidence_label"])
+    coverage_state = str(primary_lane["coverage_state"])
+    freshness_score = int(primary_lane["freshness_score"])
+    coverage_score = int(primary_lane["coverage_score"])
+    latency_details = primary_lane["latency_assessment"]
+    market_data_latency_minutes = int(latency_details["market_data_latency_minutes"])
+    latency_class = str(latency_details["latency_class"])
+    why_code = list(primary_lane["why_code"])
+
+    horizon_primary = str(primary_lane["canonical_horizon"])
+    horizon_secondary = [str(lane_diagnostics[lane_id]["canonical_horizon"]) for lane_id in secondary_lane_ids]
+
+    evidence.update(
+        {
+            "required_symbols": list(CORE_REGIME_SYMBOLS),
+            "macro_proxy_symbols": list(MACRO_PROXY_SYMBOLS),
+            "required_symbols_present": required_symbols_present,
+            "total_proxy_symbols_present": total_symbols_present,
+            "latest_bar_utc": from_db_utc(global_latest_utc).isoformat(),
+            "latest_market_date": latest_market_date.isoformat(),
+            "expected_min_market_date": expected_min_market_date.isoformat(),
+            "latest_market_date_ok": latest_market_date_ok,
+            "market_calendar_state": calendar_row.market_calendar_state,
+            "day_name": calendar_row.day_name,
+            "last_cash_session_date": calendar_row.last_cash_session_date.isoformat(),
+            "market_session_state": current_market_session,
+            "data_status": market_data_statuses,
+            "market_data_latency_minutes": market_data_latency_minutes,
+            "recency_ok": latest_market_date_ok,
+            "latency_class": latency_class,
+            "vix_proxy_symbol": "VIXY",
+            "vix_proxy_level": round(vix_proxy_level, 4),
+            "vix_proxy_5d_change": round(vix_proxy_5d_change, 6),
+            "supports": [label for label, _ in supports],
+            "penalties": [label for label, _ in penalties],
+            "daily_raw_score": round(daily_raw_score, 4),
+                "intraday_overlay_score": round(intraday_overlay_score, 4),
+                "macro_hostility": macro_hostility,
+                "intraday_overlay": {
+                "intraday_overlay_state": intraday_overlay_state,
+                "intraday_overlay_freshness": intraday_overlay_freshness,
+                "latest_intraday_ts_utc": from_db_utc(latest_intraday_ts).isoformat() if latest_intraday_ts else None,
+                "latest_snapshot_ts_utc": from_db_utc(latest_snapshot_ts).isoformat() if latest_snapshot_ts else None,
+                "spy_intraday_return_pct": round(float(intraday_metrics["spy_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["spy_intraday_return_pct"], float)
+                else None,
+                "qqq_intraday_return_pct": round(float(intraday_metrics["qqq_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["qqq_intraday_return_pct"], float)
+                else None,
+                "vixy_intraday_return_pct": round(float(intraday_metrics["vixy_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["vixy_intraday_return_pct"], float)
+                else None,
+                "tlt_intraday_return_pct": round(float(intraday_metrics["tlt_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["tlt_intraday_return_pct"], float)
+                else None,
+                "ief_intraday_return_pct": round(float(intraday_metrics["ief_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["ief_intraday_return_pct"], float)
+                else None,
+                "shy_intraday_return_pct": round(float(intraday_metrics["shy_intraday_return_pct"]), 6)
+                if isinstance(intraday_metrics["shy_intraday_return_pct"], float)
+                else None,
+                "spy_snapshot_change_pct": round(float(intraday_metrics["spy_snapshot_change_pct"]), 6)
+                if isinstance(intraday_metrics["spy_snapshot_change_pct"], float)
+                else None,
+                "qqq_snapshot_change_pct": round(float(intraday_metrics["qqq_snapshot_change_pct"]), 6)
+                if isinstance(intraday_metrics["qqq_snapshot_change_pct"], float)
+                else None,
+                "vixy_snapshot_change_pct": round(float(intraday_metrics["vixy_snapshot_change_pct"]), 6)
+                if isinstance(intraday_metrics["vixy_snapshot_change_pct"], float)
+                else None,
+            },
+                "latest_macro_ts_utc": from_db_utc(latest_macro_ts_utc).isoformat() if latest_macro_ts_utc else None,
+                "latest_macro_news_ts_utc": (
+                    from_db_utc(latest_macro_news_ts_utc).isoformat() if latest_macro_news_ts_utc else None
+                ),
+            "macro_age_days": macro_age_days,
+            "macro_news_age_hours": round(macro_news_age_hours, 2) if macro_news_age_hours is not None else None,
+            "macro_data_fresh": macro_data_fresh,
+            "macro_news_fresh": macro_news_fresh,
+            "evidence_density_score": evidence_density_score,
+            "feature_agreement_score": feature_agreement_score,
+            "freshness_score": freshness_score,
+            "stability_score": stability_score,
+            "coverage_score": coverage_score,
+            "lane_diagnostics": lane_diagnostics,
+        }
+    )
+
+    row = {
+        "model_id": "market_regime_v1",
+        "model_scope": "market",
+        "scope_id": "US_BROAD_MARKET",
+        "horizon_primary": horizon_primary,
+        "horizon_secondary": horizon_secondary,
+        "lane_primary": primary_lane_id,
+        "lane_secondary": secondary_lane_ids,
+        "signal_direction": signal_direction,
+        "signal_strength": signal_strength,
+        "confidence_score": confidence_score,
+        "confidence_label": confidence_label_value,
+        "coverage_state": coverage_state,
+        "score_raw": round(raw_score, 4),
+        "score_normalized": round(score_normalized, 4),
+        "why_code": why_code,
+        "lane_diagnostics": lane_diagnostics,
+        "evidence": evidence,
+        "as_of_utc": now_utc.isoformat(),
+        "data_freshness_ok": bool(primary_lane["lane_data_freshness_ok"]),
+        "execution_ready": bool(primary_lane["lane_execution_ready"]),
+    }
+    return row

@@ -6,6 +6,8 @@ Initial scaffold for a long-only, manual-execution trading intelligence platform
 - Trading and data specs in:
   - `TRADING_SPEC_V1.md`
   - `DATA_CONTRACT_V1.md`
+- Modeling implementation workflow:
+  - `docs/IMPLEMENTATION_AUDIT_WORKFLOW.md`
 - Typed schema and service scaffold under `src/tradly/`
 - Broker-state freshness gate implemented in `src/tradly/services/freshness_gate.py`
 - OpenAI-only model suite config in `src/tradly/config/model_suite.py`
@@ -26,7 +28,7 @@ Initial scaffold for a long-only, manual-execution trading intelligence platform
 - `OPENAI_STT_MODEL`
 
 ## Data provider env vars
-- `POLYGON_API_KEY`
+- `MASSIVE_API_KEY`
 - `MARKETAUX_API_KEY`
 - `FRED_API_KEY`
 - `MACRO_LOOKBACK_DAYS` (optional, default `730`)
@@ -43,24 +45,24 @@ Initial scaffold for a long-only, manual-execution trading intelligence platform
    - `python scripts/pipeline/seed_news.py`
 5. Seed macro history from FRED:
    - `python scripts/pipeline/seed_macro.py`
-6. Ingest strict daily market bars from Polygon:
+6. Ingest strict daily market bars from Massive:
    - `python scripts/pipeline/ingest_market_bars.py`
    - includes strict context symbols for regime modeling: `SPY`, `QQQ`, `VIXY` (VIX proxy), `TLT`, `IEF`, `SHY`
 7. Run budgeted news ingestion (daily cap logic from watchlist config, currently 2500/day):
    - `python scripts/pipeline/ingest_news.py`
 8. Run LLM news interpretation (classification + market impact note, interpretation-only):
    - `python scripts/pipeline/interpret_news.py`
-9. Run strict model:
-   - `python scripts/pipeline/run_model.py`
-10. Run LLM interpretation layer (no calculations allowed):
-   - `python scripts/pipeline/review_actions.py`
+9. Run market regime specialist:
+   - `python scripts/pipeline/run_market_regime.py`
+10. Run sector movement specialist:
+   - `python scripts/pipeline/run_sector_movement.py`
 
 ## Canonical runners
 - One-time bootstrap:
   - `python scripts/pipeline/bootstrap.py`
 - Recurring cycle:
   - `python scripts/pipeline/cycle.py`
-  - order: market bars -> news ingest -> news interpretation -> model -> LLM review
+  - order: market bars -> news ingest -> news interpretation -> market regime -> sector movement
 - Seed readiness audit:
   - `python scripts/pipeline/seed_audit.py`
   - exits non-zero on failing baseline checks
@@ -117,8 +119,9 @@ Depth-first historical news seed example:
 1. Start dashboard:
    - `streamlit run dashboard/app.py`
 2. Dashboard now reads:
-   - `data/runs/<date>/model_v0_actions.json`
-   - `data/runs/<date>/model_v0_reviewed.json`
-3. Manual execution remains Robinhood-only (no programmatic order placement).
+   - `data/runs/<date>/market_regime_v1.json`
+   - `data/runs/<date>/sector_movement_v1.json`
+   - `data/journal/freshness_snapshot.json`
+3. The dashboard is now a specialist-model status surface, not a legacy action sheet.
 4. Open from your phone/browser on the same network:
    - `http://<your-machine-ip>:8501`

@@ -1,0 +1,24 @@
+{
+  "run_timestamp_utc": "2026-03-14T21:24:02.672309+00:00",
+  "run_timestamp_local": "2026-03-14T16:24:02.672309-05:00",
+  "local_timezone": "America/Chicago",
+  "model": "v0_price_risk_stateless",
+  "model_status": "BLOCKED",
+  "blocked_reason_codes": [
+    "required_source_stale:news_pull_recency",
+    "required_source_stale:news_pull_success_missing"
+  ],
+  "source_gate": {
+    "market_hours": false,
+    "latest_success_pull_at_utc": null,
+    "latest_success_pull_age_sec": null,
+    "news_max_age_sec": 14400,
+    "success_pulls_today": 0,
+    "news_min_success": 1,
+    "latest_macro_ts_utc": "2026-03-12T00:00:00+00:00",
+    "macro_age_days": 2,
+    "macro_max_age_days": 2
+  },
+  "actions": [],
+  "scored_count": 0
+}
