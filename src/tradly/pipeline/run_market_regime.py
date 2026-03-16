@@ -118,7 +118,7 @@ def main() -> int:
             """,
             list(REGIME_SYMBOLS),
         ).fetchall()
-        latest_macro_ts_utc = conn.execute("SELECT MAX(ts_utc) FROM macro_points").fetchone()[0]
+        latest_macro_ts_utc = conn.execute("SELECT MAX(as_of_utc) FROM macro_points").fetchone()[0]
         latest_macro_news_ts_utc = conn.execute(
             """
             SELECT MAX(interpreted_at_utc)

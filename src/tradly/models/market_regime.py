@@ -25,13 +25,16 @@ from tradly.services.market_calendar import (
 
 
 MARKET_TZ = ZoneInfo("America/New_York")
-REGIME_SYMBOLS = ("SPY", "QQQ", "VIXY", "TLT", "IEF", "SHY")
+CORE_REGIME_SYMBOLS = ("SPY", "QQQ", "VIXY", "TLT", "IEF", "SHY")
+MACRO_PROXY_SYMBOLS = ("IWM", "XLE", "XLP", "XLU", "XLV")
+REGIME_SYMBOLS = CORE_REGIME_SYMBOLS + MACRO_PROXY_SYMBOLS
 MIN_DAILY_BARS = 61
 VALID_DATA_STATUS = {"REALTIME", "DELAYED"}
 MAX_MACRO_AGE_DAYS = 2
 MAX_MACRO_NEWS_AGE_HOURS = 24
 RAW_SCORE_SCALE = 12.0
 INTRADAY_OVERLAY_SCALE = 4.0
+MACRO_HOSTILITY_SCORE_LIMIT = 30.0
 LANE_TO_HORIZON = {
     "near_term": "1to3d",
     "swing_term": "1to2w",
@@ -74,9 +77,9 @@ def _market_date_from_db_ts(ts: datetime) -> datetime.date:
     return from_db_utc(ts).astimezone(MARKET_TZ).date()
 
 
-def _latest_close_and_r20(bars: list[Bar]) -> tuple[float, float]:
+def _latest_close_r20_r60(bars: list[Bar]) -> tuple[float, float, float]:
     closes = [bar.close for bar in bars]
-    return closes[-1], closes[-1] / closes[-21] - 1.0
+    return closes[-1], closes[-1] / closes[-21] - 1.0, closes[-1] / closes[-61] - 1.0
 
 
 def _returns(closes: list[float]) -> list[float]:
@@ -271,7 +274,7 @@ def _build_intraday_overlay(
 
 
 def _coverage_state(required_symbols_present: int, latest_market_date_ok: bool) -> str:
-    if required_symbols_present < len(REGIME_SYMBOLS):
+    if required_symbols_present < len(CORE_REGIME_SYMBOLS):
         return "insufficient_evidence"
     if not latest_market_date_ok:
         return "thin_evidence"
@@ -285,6 +288,200 @@ def _merge_forced_coverage_state(base_state: str, forced_state: str | None) -> s
     if forced_priority[forced_state] < forced_priority[base_state]:
         return forced_state
     return base_state
+
+
+def _metric(buckets: dict[str, dict[str, float]], symbol: str, key: str) -> float | None:
+    metric = buckets.get(symbol)
+    if metric is None:
+        return None
+    value = metric.get(key)
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _average(values: list[float | None]) -> float | None:
+    usable = [float(value) for value in values if isinstance(value, (int, float))]
+    if not usable:
+        return None
+    return sum(usable) / len(usable)
+
+
+def _macro_hostility(
+    *,
+    proxy_metrics: dict[str, dict[str, float]],
+    intraday_overlay_state: str,
+    intraday_overlay_freshness: str,
+) -> tuple[dict[str, object], float, list[str]]:
+    conflict_flags: list[str] = []
+    why_code: list[str] = []
+    availability: dict[str, str] = {}
+
+    risk_r20_avg = _average([_metric(proxy_metrics, "SPY", "r20"), _metric(proxy_metrics, "QQQ", "r20"), _metric(proxy_metrics, "IWM", "r20")])
+    risk_r60_avg = _average([_metric(proxy_metrics, "SPY", "r60"), _metric(proxy_metrics, "QQQ", "r60"), _metric(proxy_metrics, "IWM", "r60")])
+    if risk_r20_avg is None or risk_r60_avg is None:
+        risk_appetite_state = "unavailable"
+        availability["risk_appetite_state"] = "missing_proxies"
+    elif risk_r20_avg >= 0.02 and risk_r60_avg >= 0.04:
+        risk_appetite_state = "risk_on"
+        availability["risk_appetite_state"] = "daily"
+    elif risk_r20_avg <= -0.02 or risk_r60_avg <= -0.04:
+        risk_appetite_state = "risk_off"
+        availability["risk_appetite_state"] = "daily"
+    else:
+        risk_appetite_state = "unstable"
+        availability["risk_appetite_state"] = "daily"
+
+    if risk_appetite_state != "unavailable":
+        if intraday_overlay_state == "risk_off":
+            risk_appetite_state = "risk_off" if risk_appetite_state != "risk_on" else "unstable"
+            availability["risk_appetite_state"] = intraday_overlay_freshness
+        elif intraday_overlay_state == "supportive":
+            if risk_appetite_state == "risk_off":
+                risk_appetite_state = "unstable"
+            elif risk_appetite_state == "unstable":
+                risk_appetite_state = "risk_on"
+            availability["risk_appetite_state"] = intraday_overlay_freshness
+
+    tlt_r20 = _metric(proxy_metrics, "TLT", "r20")
+    ief_r20 = _metric(proxy_metrics, "IEF", "r20")
+    if tlt_r20 is None or ief_r20 is None:
+        rates_pressure_state = "unavailable"
+        availability["rates_pressure_state"] = "missing_proxies"
+    elif tlt_r20 >= 0.01 and ief_r20 >= 0.0:
+        rates_pressure_state = "supportive"
+        availability["rates_pressure_state"] = "daily"
+    elif tlt_r20 <= -0.02 or (tlt_r20 <= -0.01 and ief_r20 <= -0.005):
+        rates_pressure_state = "pressuring"
+        availability["rates_pressure_state"] = "daily"
+    else:
+        rates_pressure_state = "mixed"
+        availability["rates_pressure_state"] = "daily"
+
+    xle_r20 = _metric(proxy_metrics, "XLE", "r20")
+    broad_r20_avg = risk_r20_avg
+    xle_relative_r20 = xle_r20 - broad_r20_avg if xle_r20 is not None and broad_r20_avg is not None else None
+    if xle_relative_r20 is None or risk_appetite_state == "unavailable":
+        energy_stress_state = "unavailable"
+        availability["energy_stress_state"] = "missing_proxies"
+    elif xle_relative_r20 >= 0.03 and risk_appetite_state in {"unstable", "risk_off"}:
+        energy_stress_state = "stress"
+        availability["energy_stress_state"] = "proxy_daily"
+    elif xle_relative_r20 >= 0.015:
+        energy_stress_state = "elevated"
+        availability["energy_stress_state"] = "proxy_daily"
+    else:
+        energy_stress_state = "contained"
+        availability["energy_stress_state"] = "proxy_daily"
+
+    defensive_r20_avg = _average([
+        _metric(proxy_metrics, "XLP", "r20"),
+        _metric(proxy_metrics, "XLU", "r20"),
+        _metric(proxy_metrics, "XLV", "r20"),
+    ])
+    defensive_relative_r20 = defensive_r20_avg - broad_r20_avg if defensive_r20_avg is not None and broad_r20_avg is not None else None
+    if defensive_relative_r20 is None:
+        defensive_rotation_state = "unavailable"
+        availability["defensive_rotation_state"] = "missing_proxies"
+    elif defensive_relative_r20 >= 0.015:
+        defensive_rotation_state = "defensive_leadership"
+        availability["defensive_rotation_state"] = "daily"
+    elif defensive_relative_r20 <= -0.015:
+        defensive_rotation_state = "cyclical_leadership"
+        availability["defensive_rotation_state"] = "daily"
+    else:
+        defensive_rotation_state = "mixed"
+        availability["defensive_rotation_state"] = "daily"
+
+    unavailable_count = sum(
+        1
+        for state in (
+            risk_appetite_state,
+            rates_pressure_state,
+            energy_stress_state,
+            defensive_rotation_state,
+        )
+        if state == "unavailable"
+    )
+
+    score = 0.0
+    score += {"risk_on": 10.0, "unstable": 0.0, "risk_off": -10.0, "unavailable": 0.0}[risk_appetite_state]
+    score += {"supportive": 6.0, "mixed": 0.0, "pressuring": -6.0, "unavailable": 0.0}[rates_pressure_state]
+    score += {"contained": 0.0, "elevated": -4.0, "stress": -8.0, "unavailable": 0.0}[energy_stress_state]
+    score += {"cyclical_leadership": 6.0, "mixed": 0.0, "defensive_leadership": -6.0, "unavailable": 0.0}[defensive_rotation_state]
+    score = clamp(score, -MACRO_HOSTILITY_SCORE_LIMIT, MACRO_HOSTILITY_SCORE_LIMIT)
+
+    if unavailable_count >= 2:
+        macro_state = "macro_unstable"
+        conflict_flags.append("macro_proxy_coverage_incomplete")
+    elif risk_appetite_state == "risk_off" and (
+        rates_pressure_state == "pressuring"
+        or energy_stress_state == "stress"
+        or defensive_rotation_state == "defensive_leadership"
+    ):
+        macro_state = "risk_off"
+    elif (
+        risk_appetite_state == "risk_on"
+        and rates_pressure_state != "pressuring"
+        and defensive_rotation_state != "defensive_leadership"
+        and energy_stress_state != "stress"
+    ):
+        macro_state = "risk_on_confirmed"
+    else:
+        macro_state = "macro_unstable"
+
+    if risk_appetite_state == "risk_off":
+        why_code.append("macro_risk_appetite_risk_off")
+    elif risk_appetite_state == "unstable":
+        why_code.append("macro_risk_appetite_unstable")
+    elif risk_appetite_state == "risk_on":
+        why_code.append("macro_risk_on_confirmed")
+
+    if rates_pressure_state == "pressuring":
+        why_code.append("macro_rates_pressure")
+    if energy_stress_state == "stress":
+        why_code.append("macro_energy_stress")
+    if defensive_rotation_state == "defensive_leadership":
+        why_code.append("macro_defensive_rotation")
+    if macro_state == "macro_unstable":
+        why_code.append("macro_hostility_mixed")
+
+    if (
+        risk_appetite_state == "risk_on"
+        and (rates_pressure_state == "pressuring" or defensive_rotation_state == "defensive_leadership")
+    ):
+        conflict_flags.append("risk_on_vs_macro_drag")
+    if energy_stress_state in {"elevated", "stress"} and defensive_rotation_state == "cyclical_leadership":
+        conflict_flags.append("energy_stress_vs_cyclical_rotation")
+
+    macro_intraday_freshness = intraday_overlay_freshness if intraday_overlay_freshness != "unavailable" else "daily_only"
+
+    return (
+        {
+            "macro_state": macro_state,
+            "risk_appetite_state": risk_appetite_state,
+            "rates_pressure_state": rates_pressure_state,
+            "energy_stress_state": energy_stress_state,
+            "defensive_rotation_state": defensive_rotation_state,
+            "macro_hostility_score": round(score, 4),
+            "latest_macro_proxy_ts_utc": None,
+            "daily_proxy_metrics": {
+                "risk_r20_avg": round(risk_r20_avg, 6) if risk_r20_avg is not None else None,
+                "risk_r60_avg": round(risk_r60_avg, 6) if risk_r60_avg is not None else None,
+                "xle_relative_r20": round(xle_relative_r20, 6) if xle_relative_r20 is not None else None,
+                "defensive_relative_r20": round(defensive_relative_r20, 6) if defensive_relative_r20 is not None else None,
+                "tlt_r20": round(tlt_r20, 6) if tlt_r20 is not None else None,
+                "ief_r20": round(ief_r20, 6) if ief_r20 is not None else None,
+            },
+            "intraday_proxy_metrics": {
+                "intraday_overlay_state": intraday_overlay_state,
+                "intraday_overlay_freshness": intraday_overlay_freshness,
+            },
+            "macro_signal_availability": availability,
+            "macro_intraday_freshness": macro_intraday_freshness,
+            "macro_conflict_flags": conflict_flags,
+        },
+        score,
+        why_code,
+    )
 
 
 def build_market_regime_row(
@@ -310,23 +507,28 @@ def build_market_regime_row(
     for symbol in REGIME_SYMBOLS:
         bars = bars_by_symbol.get(symbol, [])
         if len(bars) < MIN_DAILY_BARS:
-            missing_symbols.append(symbol)
+            if symbol in CORE_REGIME_SYMBOLS:
+                missing_symbols.append(symbol)
             continue
         latest = bars[-1]
         status = (latest.data_status or "").upper()
         if status not in VALID_DATA_STATUS:
-            missing_symbols.append(symbol)
+            if symbol in CORE_REGIME_SYMBOLS:
+                missing_symbols.append(symbol)
             continue
-        latest_close, r20 = _latest_close_and_r20(bars)
+        latest_close, r20, r60 = _latest_close_r20_r60(bars)
         latest_by_symbol[symbol] = latest.ts_utc
         latest_closes[symbol] = latest_close
         r20_by_symbol[symbol] = r20
+        evidence[f"{symbol.lower()}_r60"] = round(r60, 6)
+        evidence[f"{symbol.lower()}_r20"] = round(r20, 6)
+        evidence.setdefault("proxy_metrics", {})[symbol] = {"r20": r20, "r60": r60, "close": latest_close}
         latest_status_by_symbol[symbol] = status
         evidence[f"{symbol.lower()}_latest_close"] = round(latest_close, 4)
-        evidence[f"{symbol.lower()}_r20"] = round(r20, 6)
 
-    required_symbols_present = len(latest_by_symbol)
-    if required_symbols_present < len(REGIME_SYMBOLS):
+    required_symbols_present = sum(1 for symbol in CORE_REGIME_SYMBOLS if symbol in latest_by_symbol)
+    total_symbols_present = len(latest_by_symbol)
+    if required_symbols_present < len(CORE_REGIME_SYMBOLS):
         return {
             "model_id": "market_regime_v1",
             "model_scope": "market",
@@ -343,7 +545,8 @@ def build_market_regime_row(
             "why_code": ["regime_inputs_missing"],
             "evidence": {
                 "missing_symbols": missing_symbols,
-                "required_symbols": list(REGIME_SYMBOLS),
+                "required_symbols": list(CORE_REGIME_SYMBOLS),
+                "macro_proxy_symbols": list(MACRO_PROXY_SYMBOLS),
             },
             "as_of_utc": now_utc.isoformat(),
             "data_freshness_ok": False,
@@ -432,7 +635,13 @@ def build_market_regime_row(
     intraday_overlay_state, intraday_overlay_freshness, intraday_overlay_score, intraday_overlay_why_code = _build_intraday_overlay(
         intraday_metrics=intraday_metrics
     )
-    raw_score = daily_raw_score + intraday_overlay_score
+    macro_hostility, macro_hostility_score, macro_hostility_why_code = _macro_hostility(
+        proxy_metrics=evidence.get("proxy_metrics", {}),
+        intraday_overlay_state=intraday_overlay_state,
+        intraday_overlay_freshness=intraday_overlay_freshness,
+    )
+    macro_hostility["latest_macro_proxy_ts_utc"] = from_db_utc(global_latest_utc).isoformat()
+    raw_score = daily_raw_score + intraday_overlay_score + (macro_hostility_score / 10.0)
     score_normalized = normalize_score(score_raw=raw_score, raw_scale=RAW_SCORE_SCALE)
     signal_strength = round(abs(score_normalized) / 100.0, 4)
 
@@ -452,8 +661,11 @@ def build_market_regime_row(
     for code in intraday_overlay_why_code:
         if code not in why_code:
             why_code.append(code)
+    for code in macro_hostility_why_code:
+        if code not in why_code:
+            why_code.append(code)
 
-    evidence_density_score = round(required_symbols_present / len(REGIME_SYMBOLS) * 100)
+    evidence_density_score = round(total_symbols_present / len(REGIME_SYMBOLS) * 100)
     pos = sum(1 for sign in feature_signs if sign > 0)
     neg = sum(1 for sign in feature_signs if sign < 0)
     total_signals = pos + neg
@@ -619,8 +831,10 @@ def build_market_regime_row(
 
     evidence.update(
         {
-            "required_symbols": list(REGIME_SYMBOLS),
+            "required_symbols": list(CORE_REGIME_SYMBOLS),
+            "macro_proxy_symbols": list(MACRO_PROXY_SYMBOLS),
             "required_symbols_present": required_symbols_present,
+            "total_proxy_symbols_present": total_symbols_present,
             "latest_bar_utc": from_db_utc(global_latest_utc).isoformat(),
             "latest_market_date": latest_market_date.isoformat(),
             "expected_min_market_date": expected_min_market_date.isoformat(),
@@ -639,8 +853,9 @@ def build_market_regime_row(
             "supports": [label for label, _ in supports],
             "penalties": [label for label, _ in penalties],
             "daily_raw_score": round(daily_raw_score, 4),
-            "intraday_overlay_score": round(intraday_overlay_score, 4),
-            "intraday_overlay": {
+                "intraday_overlay_score": round(intraday_overlay_score, 4),
+                "macro_hostility": macro_hostility,
+                "intraday_overlay": {
                 "intraday_overlay_state": intraday_overlay_state,
                 "intraday_overlay_freshness": intraday_overlay_freshness,
                 "latest_intraday_ts_utc": from_db_utc(latest_intraday_ts).isoformat() if latest_intraday_ts else None,
@@ -673,10 +888,10 @@ def build_market_regime_row(
                 if isinstance(intraday_metrics["vixy_snapshot_change_pct"], float)
                 else None,
             },
-            "latest_macro_ts_utc": from_db_utc(latest_macro_ts_utc).isoformat() if latest_macro_ts_utc else None,
-            "latest_macro_news_ts_utc": (
-                from_db_utc(latest_macro_news_ts_utc).isoformat() if latest_macro_news_ts_utc else None
-            ),
+                "latest_macro_ts_utc": from_db_utc(latest_macro_ts_utc).isoformat() if latest_macro_ts_utc else None,
+                "latest_macro_news_ts_utc": (
+                    from_db_utc(latest_macro_news_ts_utc).isoformat() if latest_macro_news_ts_utc else None
+                ),
             "macro_age_days": macro_age_days,
             "macro_news_age_hours": round(macro_news_age_hours, 2) if macro_news_age_hours is not None else None,
             "macro_data_fresh": macro_data_fresh,

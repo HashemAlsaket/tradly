@@ -454,6 +454,25 @@ def _market_tape_caution(market_payload: dict[str, Any] | None) -> str:
     return "Risk-on not confirmed"
 
 
+def _action_section_blurb(title: str, market_payload: dict[str, Any] | None = None) -> str:
+    if title != "Buy":
+        return {
+            "Sell / Trim": "Best bearish or reduce-risk setups.",
+            "Watch": "Worth monitoring, not ready yet.",
+        }.get(title, "")
+    if not isinstance(market_payload, dict):
+        return "Best bullish setups."
+    rows = market_payload.get("rows")
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        return "Best bullish setups."
+    evidence = rows[0].get("evidence")
+    macro_hostility = evidence.get("macro_hostility") if isinstance(evidence, dict) else None
+    macro_state = str(macro_hostility.get("macro_state", "")).strip().lower() if isinstance(macro_hostility, dict) else ""
+    if macro_state in {"risk_off", "macro_unstable"}:
+        return "Bullish setups, macro not confirmed."
+    return "Best bullish setups."
+
+
 def _freshness_brief(value: Any, now_utc: datetime) -> str:
     age_text = _fmt_age_from_iso(value, now_utc)
     parsed = _parse_dt(value)
@@ -626,7 +645,7 @@ def _decision_rows(review_payload: dict) -> list[dict[str, Any]]:
             continue
         out.append(
             {
-                "Symbol": str(row.get("scope_id", "UNSET")),
+                "Symbol": str(row.get("symbol") or row.get("scope_id", "UNSET")),
                 "Action": str(row.get("recommended_action", "Unknown")),
                 "Horizon": str(row.get("recommended_horizon", "UNSET")),
                 "Confidence": int(row.get("confidence_score", 0) or 0),
@@ -649,7 +668,7 @@ def _decision_rows(review_payload: dict) -> list[dict[str, Any]]:
     )
 
 
-def _render_action_list(title: str, rows: list[dict[str, Any]]) -> None:
+def _render_action_list(title: str, rows: list[dict[str, Any]], market_payload: dict[str, Any] | None = None) -> None:
     section_class = {
         "Buy": "buy",
         "Sell / Trim": "sell",
@@ -659,12 +678,7 @@ def _render_action_list(title: str, rows: list[dict[str, Any]]) -> None:
         f'<div class="tradly-section-title {section_class}">{title}</div>',
         unsafe_allow_html=True,
     )
-    section_blurbs = {
-        "Buy": "Best bullish setups.",
-        "Sell / Trim": "Best bearish or reduce-risk setups.",
-        "Watch": "Worth monitoring, not ready yet.",
-    }
-    blurb = section_blurbs.get(title, "")
+    blurb = _action_section_blurb(title, market_payload)
     if blurb:
         st.markdown(f'<div class="tradly-section-subtle">{blurb}</div>', unsafe_allow_html=True)
     if not rows:
@@ -704,7 +718,7 @@ def _render_action_list(title: str, rows: list[dict[str, Any]]) -> None:
     _render_rows(rows)
 
 
-def _render_action_board(review_payload: dict) -> None:
+def _render_action_board(review_payload: dict, market_payload: dict[str, Any] | None = None) -> None:
     ranked_rows = _decision_rows(review_payload)
     if not ranked_rows:
         st.caption("No decisions available.")
@@ -755,11 +769,11 @@ def _render_action_board(review_payload: dict) -> None:
     )[:8]
     c1, c2, c3 = st.columns([0.96, 0.96, 1.08], gap="medium")
     with c1:
-        _render_action_list("Buy", buy_rows)
+        _render_action_list("Buy", buy_rows, market_payload)
     with c2:
-        _render_action_list("Sell / Trim", sell_rows)
+        _render_action_list("Sell / Trim", sell_rows, market_payload)
     with c3:
-        _render_action_list("Watch", watch_rows)
+        _render_action_list("Watch", watch_rows, market_payload)
 
 
 def _render_horizon_landscape(ensemble_payload: dict, global_state: str) -> None:
@@ -984,7 +998,7 @@ def main() -> None:
         st.success("Ready")
 
     if section == "Decisions":
-        _render_action_board(review_payload if review_payload else recommendation_payload)
+        _render_action_board(review_payload if review_payload else recommendation_payload, market_payload)
         if show_more_symbols:
             _render_symbol_stack(review_payload if review_payload else recommendation_payload)
     elif section == "Market":

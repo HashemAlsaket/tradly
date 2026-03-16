@@ -168,6 +168,31 @@ class RecommendationTests(unittest.TestCase):
         self.assertEqual(rows[0]["regime_alignment"], "mixed")
         self.assertEqual(rows[0]["recommendation_class"], "mixed_strong_long")
 
+    def test_build_recommendation_rows_emits_explicit_symbol_for_symbol_scope(self) -> None:
+        rows = build_recommendation_rows(
+            ensemble_rows=[
+                {
+                    "scope_id": "NVDA",
+                    "confidence_score": 70,
+                    "horizon_summary": {
+                        "1to3d": {
+                            "state": "actionable",
+                            "signal_direction": "bullish",
+                            "confidence_score": 70,
+                            "confidence_label": "high",
+                            "coverage_state": "sufficient_evidence",
+                            "score_normalized": 50.0,
+                            "why_code": ["market_context_supportive"],
+                            "execution_ready": True,
+                        }
+                    },
+                }
+            ],
+            now_utc=datetime(2026, 3, 15, 19, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(rows[0]["scope_id"], "NVDA")
+        self.assertEqual(rows[0]["symbol"], "NVDA")
+
 
 if __name__ == "__main__":
     unittest.main()

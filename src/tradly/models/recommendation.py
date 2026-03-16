@@ -188,6 +188,7 @@ def build_recommendation_rows(*, ensemble_rows: list[dict], now_utc: datetime) -
         recommendations.append(
             {
                 "model_id": "recommendation_v1",
+                "symbol": scope_id,
                 "scope_id": scope_id,
                 "recommended_action": action,
                 "recommended_horizon": recommended_horizon,
