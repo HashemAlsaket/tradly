@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -42,6 +43,17 @@ def _run_step(step_name: str, module_name: str, repo_root, env: dict[str, str]) 
     return 0
 
 
+def _extract_json_payload(text: str) -> dict | None:
+    blob = text.strip()
+    if not blob:
+        return None
+    try:
+        parsed = json.loads(blob)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def main() -> int:
     repo_root = get_repo_root()
     cycle_started_at_utc = datetime.now(timezone.utc)
@@ -51,10 +63,21 @@ def main() -> int:
 
     if env.get(SKIP_PREFLIGHT_ENV) == "1":
         print("step_skipped=preflight_catchup reason=env_skip")
+        preflight_payload = None
     else:
-        preflight_rc = _run_step("preflight_catchup", PREFLIGHT_MODULE, repo_root, env)
+        cmd = [sys.executable, "-m", PREFLIGHT_MODULE]
+        print(f"step_start=preflight_catchup cmd={' '.join(cmd)}")
+        res = subprocess.run(cmd, cwd=str(repo_root), env=env, capture_output=True, text=True)
+        if res.stdout:
+            print(res.stdout)
+        if res.stderr:
+            print(res.stderr, file=sys.stderr)
+        preflight_payload = _extract_json_payload(res.stdout)
+        preflight_rc = res.returncode
         if preflight_rc != 0:
+            print(f"step_failed=preflight_catchup exit_code={preflight_rc}")
             return preflight_rc
+        print("step_ok=preflight_catchup")
 
     for step_name, module_name in STEPS:
         step_rc = _run_step(step_name, module_name, repo_root, env)
@@ -68,6 +91,8 @@ def main() -> int:
         cycle_started_at_utc=cycle_started_at_utc,
         cycle_ended_at_utc=cycle_ended_at_utc,
         cycle_status="PASS",
+        preflight_actions=preflight_payload.get("actions") if isinstance(preflight_payload, dict) else None,
+        preflight_lags=preflight_payload.get("final_lags") if isinstance(preflight_payload, dict) else None,
     )
     if freshness_out:
         print(freshness_out)

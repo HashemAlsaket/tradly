@@ -9,6 +9,7 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from tradly.paths import get_repo_root
+from tradly.pipeline.ingest_market_bars import _load_market_data_symbols
 from tradly.services.db_time import from_db_utc
 from tradly.services.market_calendar import market_session_state, previous_trading_day
 from tradly.services.time_context import get_time_context
@@ -26,19 +27,34 @@ class SourceLag:
 MARKET_TZ = ZoneInfo("America/New_York")
 PREMARKET_OPEN_ET = time(4, 0)
 AFTER_HOURS_CLOSE_ET = time(20, 0)
+WATERMARK_SOURCE_NAME_1M = "market_bars_1m"
+MACRO_REQUIRED_SERIES = ("DGS2", "DGS10", "DFF", "VIXCLS")
 
 
-def _classify_macro_age_days(
-    *,
-    age_days: int,
-    warn_after_days: int,
-    block_after_days: int,
-) -> str:
-    if age_days > block_after_days:
-        return "stale"
-    if age_days > warn_after_days:
-        return "warning"
-    return "fresh"
+def _load_macro_refresh_state(
+    conn,
+    required_series: tuple[str, ...] = MACRO_REQUIRED_SERIES,
+) -> tuple[datetime | None, bool, dict[str, str]]:
+    placeholders = ",".join("?" for _ in required_series)
+    rows = conn.execute(
+        f"""
+        SELECT series_id, MAX(ts_utc) AS latest_obs_utc, MAX(as_of_utc) AS latest_as_of_utc
+        FROM macro_points
+        WHERE series_id IN ({placeholders})
+        GROUP BY 1
+        """,
+        list(required_series),
+    ).fetchall()
+    latest_obs_by_series: dict[str, str] = {}
+    latest_asof_values: list[datetime] = []
+    for series_id, latest_obs_utc, latest_as_of_utc in rows:
+        if latest_obs_utc is not None:
+            latest_obs_by_series[str(series_id)] = from_db_utc(latest_obs_utc).date().isoformat()
+        if latest_as_of_utc is not None:
+            latest_asof_values.append(from_db_utc(latest_as_of_utc))
+    coverage_complete = len(rows) == len(required_series)
+    oldest_series_refresh = min(latest_asof_values) if latest_asof_values else None
+    return oldest_series_refresh, coverage_complete, latest_obs_by_series
 
 
 def _load_dotenv(path) -> None:
@@ -94,6 +110,54 @@ def _intraday_source_status(
     return ("fresh", age_sec) if age_sec <= max_age_sec else ("stale", age_sec)
 
 
+def _load_1m_watermark_max(conn) -> datetime | None:
+    table_exists = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_name = 'pipeline_watermarks'
+        """
+    ).fetchone()[0]
+    if not table_exists:
+        return None
+    row = conn.execute(
+        """
+        SELECT MIN(watermark_ts_utc)
+        FROM pipeline_watermarks
+        WHERE source_name = ?
+        """,
+        (WATERMARK_SOURCE_NAME_1M,),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _load_1m_watermark_coverage(conn, scoped_symbols: list[str]) -> tuple[datetime | None, bool, int]:
+    if not scoped_symbols:
+        return None, True, 0
+    table_exists = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_name = 'pipeline_watermarks'
+        """
+    ).fetchone()[0]
+    if not table_exists:
+        return None, False, 0
+    placeholders = ",".join("?" for _ in scoped_symbols)
+    row = conn.execute(
+        f"""
+        SELECT MIN(watermark_ts_utc), COUNT(*)
+        FROM pipeline_watermarks
+        WHERE source_name = ?
+          AND scope_key IN ({placeholders})
+        """,
+        [WATERMARK_SOURCE_NAME_1M, *scoped_symbols],
+    ).fetchone()
+    min_watermark = row[0] if row else None
+    coverage_count = int(row[1] or 0) if row else 0
+    return min_watermark, coverage_count == len(scoped_symbols), coverage_count
+
+
 def main() -> int:
     repo_root = get_repo_root()
     _load_dotenv(repo_root / ".env")
@@ -114,18 +178,19 @@ def main() -> int:
     market_session = market_session_state(now_utc)
     expected_min_market_date = previous_trading_day(now_utc.astimezone(MARKET_TZ).date())
     news_pull_max_age_sec = int(os.getenv("TRADLY_PREFLIGHT_NEWS_PULL_MAX_AGE_SEC", "3600"))
-    macro_warn_age_days = int(os.getenv("TRADLY_PREFLIGHT_MACRO_WARN_AGE_DAYS", "2"))
-    macro_block_age_days = int(os.getenv("TRADLY_PREFLIGHT_MACRO_BLOCK_AGE_DAYS", "5"))
+    macro_max_age_sec = int(os.getenv("TRADLY_PREFLIGHT_MACRO_MAX_AGE_SEC", "86400"))
     interp_lookback_days = int(os.getenv("TRADLY_PREFLIGHT_INTERPRET_LOOKBACK_DAYS", "7"))
     intraday_bar_max_age_sec = int(os.getenv("TRADLY_1M_MAX_AGE_SEC_ACTIVE_SESSION", "1200"))
     snapshot_max_age_sec = int(os.getenv("TRADLY_SNAPSHOT_MAX_AGE_SEC_ACTIVE_SESSION", "1200"))
+    scoped_symbols = _load_market_data_symbols(repo_root)
 
     conn = duckdb.connect(str(db_path), read_only=True)
     try:
         latest_market_bar = conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1d'"
         ).fetchone()[0]
-        latest_intraday_bar = conn.execute(
+        watermark_intraday_bar, watermark_coverage_complete, watermark_coverage_count = _load_1m_watermark_coverage(conn, scoped_symbols)
+        latest_intraday_bar = watermark_intraday_bar or conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1m'"
         ).fetchone()[0]
         latest_snapshot = conn.execute(
@@ -154,7 +219,7 @@ def main() -> int:
         )
         latest_news_event = conn.execute("SELECT MAX(published_at_utc) FROM news_events").fetchone()[0]
         latest_interp = conn.execute("SELECT MAX(interpreted_at_utc) FROM news_interpretations").fetchone()[0]
-        latest_macro = conn.execute("SELECT MAX(ts_utc) FROM macro_points").fetchone()[0]
+        latest_macro_refresh, macro_coverage_complete, latest_macro_obs_by_series = _load_macro_refresh_state(conn)
     finally:
         conn.close()
 
@@ -195,6 +260,9 @@ def main() -> int:
         market_session=market_session,
         max_age_sec=intraday_bar_max_age_sec,
     )
+    if not watermark_coverage_complete:
+        intraday_bar_status = "missing"
+        intraday_bar_age_sec = None
     if latest_intraday_bar is not None:
         latest_intraday_market_date = _market_date_from_db_ts(latest_intraday_bar)
         intraday_backfill_from = max(expected_min_market_date, latest_intraday_market_date - timedelta(days=1)).isoformat()
@@ -207,7 +275,8 @@ def main() -> int:
             status="fresh" if intraday_bar_status in {"fresh", "not_required"} else "stale",
             detail=(
                 f"market_session={market_session} status={intraday_bar_status} "
-                f"age_sec={intraday_bar_age_sec} max_age_sec={intraday_bar_max_age_sec}"
+                f"age_sec={intraday_bar_age_sec} max_age_sec={intraday_bar_max_age_sec} "
+                f"watermark_coverage={watermark_coverage_count}/{len(scoped_symbols)}"
             ),
             backfill_from=intraday_backfill_from if intraday_bar_status in {"missing", "stale"} else None,
             backfill_to=intraday_backfill_to if intraday_bar_status in {"missing", "stale"} else None,
@@ -257,42 +326,28 @@ def main() -> int:
         )
     )
 
-    macro_needs_refresh = True
-    if latest_macro is not None:
-        latest_macro = from_db_utc(latest_macro)
-        macro_age_days = int((now_utc.date() - latest_macro.date()).days)
-        macro_status = _classify_macro_age_days(
-            age_days=macro_age_days,
-            warn_after_days=macro_warn_age_days,
-            block_after_days=macro_block_age_days,
+    macro_refresh_age_sec = _age_seconds(latest_macro_refresh, now_utc)
+    macro_needs_refresh = (
+        latest_macro_refresh is None
+        or not macro_coverage_complete
+        or macro_refresh_age_sec is None
+        or macro_refresh_age_sec > macro_max_age_sec
+    )
+    macro_backfill_from = (now_utc.date() - timedelta(days=7)).isoformat() if macro_needs_refresh else None
+    macro_backfill_to = now_utc.date().isoformat() if macro_needs_refresh else None
+    lags.append(
+        SourceLag(
+            source="macro_points",
+            status="stale" if macro_needs_refresh else "fresh",
+            detail=(
+                f"asof_age_sec={macro_refresh_age_sec} max_age_sec={macro_max_age_sec} "
+                f"series_coverage={len(latest_macro_obs_by_series)}/{len(MACRO_REQUIRED_SERIES)} "
+                f"latest_obs_by_series={latest_macro_obs_by_series}"
+            ),
+            backfill_from=macro_backfill_from,
+            backfill_to=macro_backfill_to,
         )
-        macro_needs_refresh = macro_status != "fresh"
-        macro_backfill_from = (
-            (latest_macro.date() - timedelta(days=3)).isoformat() if macro_needs_refresh else None
-        )
-        macro_backfill_to = now_utc.date().isoformat() if macro_needs_refresh else None
-        lags.append(
-            SourceLag(
-                source="macro_points",
-                status=macro_status,
-                detail=(
-                    f"latest_date={latest_macro.date()} age_days={macro_age_days} "
-                    f"warn_age_days={macro_warn_age_days} block_age_days={macro_block_age_days}"
-                ),
-                backfill_from=macro_backfill_from,
-                backfill_to=macro_backfill_to,
-            )
-        )
-    else:
-        lags.append(
-            SourceLag(
-                source="macro_points",
-                status="stale",
-                detail="no rows",
-                backfill_from=(now_utc.date() - timedelta(days=730)).isoformat(),
-                backfill_to=now_utc.date().isoformat(),
-            )
-        )
+    )
 
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH", "")
@@ -449,7 +504,8 @@ def main() -> int:
         final_latest_market_bar = conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1d'"
         ).fetchone()[0]
-        final_latest_intraday_bar = conn.execute(
+        final_watermark_intraday_bar, final_watermark_coverage_complete, final_watermark_coverage_count = _load_1m_watermark_coverage(conn, scoped_symbols)
+        final_latest_intraday_bar = final_watermark_intraday_bar or conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1m'"
         ).fetchone()[0]
         final_latest_snapshot = conn.execute(
@@ -476,7 +532,7 @@ def main() -> int:
             ).fetchone()[0]
             or 0
         )
-        final_latest_macro = conn.execute("SELECT MAX(ts_utc) FROM macro_points").fetchone()[0]
+        final_latest_macro_refresh, final_macro_coverage_complete, final_macro_obs_by_series = _load_macro_refresh_state(conn)
     finally:
         conn.close()
 
@@ -503,13 +559,17 @@ def main() -> int:
         market_session=market_session,
         max_age_sec=intraday_bar_max_age_sec,
     )
+    if not final_watermark_coverage_complete:
+        final_intraday_status = "missing"
+        final_intraday_age_sec = None
     final_lags.append(
         SourceLag(
             source="market_bars_1m",
             status="fresh" if final_intraday_status in {"fresh", "not_required"} else "stale",
             detail=(
                 f"market_session={market_session} status={final_intraday_status} "
-                f"age_sec={final_intraday_age_sec} max_age_sec={intraday_bar_max_age_sec}"
+                f"age_sec={final_intraday_age_sec} max_age_sec={intraday_bar_max_age_sec} "
+                f"watermark_coverage={final_watermark_coverage_count}/{len(scoped_symbols)}"
             ),
         )
     )
@@ -546,26 +606,24 @@ def main() -> int:
         )
     )
 
-    if final_latest_macro is None:
-        final_lags.append(SourceLag("macro_points", "stale", "no rows"))
-    else:
-        final_latest_macro = from_db_utc(final_latest_macro)
-        final_macro_age_days = int((now_utc.date() - final_latest_macro.date()).days)
-        final_macro_status = _classify_macro_age_days(
-            age_days=final_macro_age_days,
-            warn_after_days=macro_warn_age_days,
-            block_after_days=macro_block_age_days,
+    final_macro_refresh_age_sec = _age_seconds(final_latest_macro_refresh, now_utc)
+    final_macro_stale = (
+        final_latest_macro_refresh is None
+        or not final_macro_coverage_complete
+        or final_macro_refresh_age_sec is None
+        or final_macro_refresh_age_sec > macro_max_age_sec
+    )
+    final_lags.append(
+        SourceLag(
+            source="macro_points",
+            status="stale" if final_macro_stale else "fresh",
+            detail=(
+                f"asof_age_sec={final_macro_refresh_age_sec} max_age_sec={macro_max_age_sec} "
+                f"series_coverage={len(final_macro_obs_by_series)}/{len(MACRO_REQUIRED_SERIES)} "
+                f"latest_obs_by_series={final_macro_obs_by_series}"
+            ),
         )
-        final_lags.append(
-            SourceLag(
-                source="macro_points",
-                status=final_macro_status,
-                detail=(
-                    f"latest_date={final_latest_macro.date()} age_days={final_macro_age_days} "
-                    f"warn_age_days={macro_warn_age_days} block_age_days={macro_block_age_days}"
-                ),
-            )
-        )
+    )
 
     unresolved = [x for x in final_lags if x.status == "stale"]
     if unresolved:

@@ -187,6 +187,8 @@ def main() -> int:
             or 0
         )
         latest_interp_utc = conn.execute("SELECT MAX(interpreted_at_utc) FROM news_interpretations").fetchone()[0]
+        latest_macro_points_utc = conn.execute("SELECT MAX(ts_utc) FROM macro_points").fetchone()[0]
+        latest_macro_as_of_utc = conn.execute("SELECT MAX(as_of_utc) FROM macro_points").fetchone()[0]
         pending_uninterpreted_24h = int(
             conn.execute(
                 """
@@ -386,6 +388,8 @@ def main() -> int:
             "snapshot_status": snapshot_status,
             "latest_news_pull_utc": from_db_utc(latest_news_pull_utc).isoformat() if latest_news_pull_utc else None,
             "latest_interp_utc": from_db_utc(latest_interp_utc).isoformat() if latest_interp_utc else None,
+            "latest_macro_points_utc": from_db_utc(latest_macro_points_utc).isoformat() if latest_macro_points_utc else None,
+            "latest_macro_as_of_utc": from_db_utc(latest_macro_as_of_utc).isoformat() if latest_macro_as_of_utc else None,
             "success_news_pulls_today": success_news_pulls_today,
             "total_news_pulls_today": total_news_pulls_today,
             "market_calendar_state": calendar_row.market_calendar_state,

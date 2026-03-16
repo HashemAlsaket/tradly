@@ -46,17 +46,28 @@ class CycleStepOrderTests(unittest.TestCase):
         )
 
     def test_cycle_runs_preflight_by_default(self) -> None:
+        class FakeResult:
+            def __init__(self, returncode=0, stdout='{"actions":["seed_macro_fred"],"final_lags":[{"source":"macro_points","status":"warning"}]}', stderr=""):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
         with patch.object(cycle, "get_repo_root", return_value=Path("/tmp/tradly")), \
+            patch.object(cycle.subprocess, "run", return_value=FakeResult()) as run_proc, \
             patch.object(cycle, "_run_step", return_value=0) as run_step, \
-            patch.object(cycle, "run_and_write_runtime_freshness_snapshot", return_value=(0, "", "", {})), \
+            patch.object(cycle, "run_and_write_runtime_freshness_snapshot", return_value=(0, "", "", {})) as freshness_mock, \
             patch.dict(cycle.os.environ, {}, clear=True):
             rc = cycle.main()
 
         self.assertEqual(rc, 0)
+        run_proc.assert_called_once()
         self.assertGreaterEqual(run_step.call_count, 1)
         first_call = run_step.call_args_list[0]
-        self.assertEqual(first_call.args[0], "preflight_catchup")
-        self.assertEqual(first_call.args[1], cycle.PREFLIGHT_MODULE)
+        self.assertEqual(first_call.args[0], cycle.STEPS[0][0])
+        freshness_mock.assert_called_once()
+        kwargs = freshness_mock.call_args.kwargs
+        self.assertEqual(kwargs["preflight_actions"], ["seed_macro_fred"])
+        self.assertEqual(kwargs["preflight_lags"], [{"source": "macro_points", "status": "warning"}])
 
     def test_cycle_skips_preflight_when_env_requests_it(self) -> None:
         with patch.object(cycle, "get_repo_root", return_value=Path("/tmp/tradly")), \

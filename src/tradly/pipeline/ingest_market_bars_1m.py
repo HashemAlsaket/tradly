@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Iterable
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
@@ -21,12 +22,28 @@ from tradly.pipeline.ingest_market_bars import (
     _write_validation_artifact,
 )
 from tradly.paths import get_repo_root
-from tradly.services.db_time import to_db_utc
+from tradly.services.db_time import from_db_utc, to_db_utc
 from tradly.services.time_context import get_time_context
 
 
 LOOKBACK_DAYS_1M = 30
 VALID_PAYLOAD_STATUS = {"OK", "DELAYED"}
+WATERMARK_SOURCE_NAME = "market_bars_1m"
+
+
+def _ensure_pipeline_watermarks_table(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pipeline_watermarks (
+          source_name TEXT NOT NULL,
+          scope_key TEXT NOT NULL,
+          watermark_ts_utc TIMESTAMP,
+          watermark_meta_json TEXT,
+          updated_at_utc TIMESTAMP NOT NULL,
+          PRIMARY KEY (source_name, scope_key)
+        )
+        """
+    )
 
 
 def _build_minute_agg_url(symbol: str, api_key: str, start_date: str, end_date: str) -> str:
@@ -101,6 +118,78 @@ def _normalize_minute_bar_row(*, symbol: str, bar: dict, ingested_at: datetime) 
     )
 
 
+def _load_1m_watermarks(conn, symbols: Iterable[str]) -> dict[str, datetime]:
+    symbol_list = list(symbols)
+    if not symbol_list:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT scope_key, watermark_ts_utc
+        FROM pipeline_watermarks
+        WHERE source_name = ?
+          AND scope_key IN ({placeholders})
+        """.format(placeholders=",".join("?" for _ in symbol_list)),
+        [WATERMARK_SOURCE_NAME, *symbol_list],
+    ).fetchall()
+    return {str(scope_key): watermark_ts_utc for scope_key, watermark_ts_utc in rows if watermark_ts_utc is not None}
+
+
+def _request_window_from_watermark(
+    *,
+    default_start_date: str,
+    default_end_date: str,
+    watermark_ts_utc: datetime | None,
+) -> tuple[str, str]:
+    if watermark_ts_utc is None:
+        return default_start_date, default_end_date
+    watermark_day = from_db_utc(watermark_ts_utc).astimezone(timezone.utc).date()
+    start_date = (watermark_day - timedelta(days=1)).isoformat()
+    return start_date, default_end_date
+
+
+def _filter_rows_newer_than_watermark(rows: list[tuple], watermark_ts_utc: datetime | None) -> list[tuple]:
+    if watermark_ts_utc is None:
+        return rows
+    return [row for row in rows if row[2] > watermark_ts_utc]
+
+
+def _upsert_1m_watermarks(db_path: Path, per_symbol_max_ts: dict[str, datetime], updated_at: datetime) -> None:
+    if not per_symbol_max_ts:
+        return
+    import duckdb
+
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.executemany(
+            """
+            INSERT INTO pipeline_watermarks (
+              source_name,
+              scope_key,
+              watermark_ts_utc,
+              watermark_meta_json,
+              updated_at_utc
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (source_name, scope_key) DO UPDATE SET
+              watermark_ts_utc = excluded.watermark_ts_utc,
+              watermark_meta_json = excluded.watermark_meta_json,
+              updated_at_utc = excluded.updated_at_utc
+            """,
+            [
+                (
+                    WATERMARK_SOURCE_NAME,
+                    symbol,
+                    max_ts,
+                    json.dumps({"timeframe": "1m"}, ensure_ascii=True),
+                    updated_at,
+                )
+                for symbol, max_ts in per_symbol_max_ts.items()
+            ],
+        )
+    finally:
+        conn.close()
+
+
 def main() -> int:
     repo_root = get_repo_root()
     _load_dotenv(repo_root / ".env")
@@ -131,13 +220,13 @@ def main() -> int:
         print("ingest_market_bars_1m_v0_failed")
         print(f"error={exc}")
         return 11
-    start_date = os.getenv("TRADLY_MARKET_1M_FROM_DATE", default_start_date).strip()
-    end_date = os.getenv("TRADLY_MARKET_1M_TO_DATE", default_end_date).strip()
-    if not start_date or not end_date:
+    env_start_date = os.getenv("TRADLY_MARKET_1M_FROM_DATE", default_start_date).strip()
+    env_end_date = os.getenv("TRADLY_MARKET_1M_TO_DATE", default_end_date).strip()
+    if not env_start_date or not env_end_date:
         print("invalid_market_1m_window")
         return 8
-    if start_date > end_date:
-        print(f"invalid_market_1m_window:start_date={start_date}:end_date={end_date}")
+    if env_start_date > env_end_date:
+        print(f"invalid_market_1m_window:start_date={env_start_date}:end_date={env_end_date}")
         return 9
     ingested_at = to_db_utc(time_ctx.now_utc)
 
@@ -150,7 +239,9 @@ def main() -> int:
 
     conn = duckdb.connect(str(db_path))
     try:
+        _ensure_pipeline_watermarks_table(conn)
         symbols, missing_context = _load_scoped_instrument_symbols(conn, scoped_symbols)
+        watermarks = _load_1m_watermarks(conn, symbols)
     finally:
         conn.close()
 
@@ -166,9 +257,17 @@ def main() -> int:
     rows_to_upsert: list[tuple] = []
     errors: list[str] = []
     summary: list[tuple[str, int, str]] = []
+    watermark_summary: list[dict[str, object]] = []
+    per_symbol_max_ts: dict[str, datetime] = {}
     run_date = time_ctx.now_utc.strftime("%Y-%m-%d")
 
     for symbol in symbols:
+        previous_watermark = watermarks.get(symbol)
+        start_date, end_date = _request_window_from_watermark(
+            default_start_date=env_start_date,
+            default_end_date=env_end_date,
+            watermark_ts_utc=previous_watermark,
+        )
         try:
             _status, bars = _fetch_minute_bars(symbol, api_key, start_date, end_date)
         except HTTPError as exc:
@@ -181,16 +280,30 @@ def main() -> int:
             errors.append(f"{symbol}:unexpected:{exc}")
             continue
 
-        valid_symbol_rows = 0
+        normalized_symbol_rows: list[tuple] = []
         for bar in bars:
             try:
-                rows_to_upsert.append(_normalize_minute_bar_row(symbol=symbol, bar=bar, ingested_at=ingested_at))
+                normalized_symbol_rows.append(_normalize_minute_bar_row(symbol=symbol, bar=bar, ingested_at=ingested_at))
             except RuntimeError as exc:
                 errors.append(str(exc))
-                valid_symbol_rows = 0
+                normalized_symbol_rows = []
                 break
-            valid_symbol_rows += 1
-        summary.append((symbol, valid_symbol_rows, BACKFILL_DATA_STATUS))
+        new_symbol_rows = _filter_rows_newer_than_watermark(normalized_symbol_rows, previous_watermark)
+        rows_to_upsert.extend(new_symbol_rows)
+        if new_symbol_rows:
+            per_symbol_max_ts[symbol] = max(row[2] for row in new_symbol_rows)
+        summary.append((symbol, len(new_symbol_rows), BACKFILL_DATA_STATUS))
+        watermark_summary.append(
+            {
+                "symbol": symbol,
+                "previous_watermark_utc": previous_watermark.isoformat() if hasattr(previous_watermark, "isoformat") else None,
+                "request_window": {"from_date": start_date, "to_date": end_date},
+                "fetched_row_count": len(normalized_symbol_rows),
+                "new_row_count": len(new_symbol_rows),
+                "advanced_watermark_utc": per_symbol_max_ts[symbol].isoformat() if symbol in per_symbol_max_ts else None,
+                "advancement_status": "advanced" if symbol in per_symbol_max_ts else ("already_current" if previous_watermark is not None else "bootstrap_no_new_rows"),
+            }
+        )
 
     if errors:
         print("ingest_market_bars_1m_v0_failed")
@@ -198,16 +311,12 @@ def main() -> int:
             print(f"error={err}")
         return 6
 
-    if not rows_to_upsert:
-        print("no 1m bars prepared for upsert")
-        return 7
-
     artifact_path = _write_validation_artifact(
         repo_root=repo_root,
         run_date=run_date,
         mode=backfill_mode,
-        start_date=start_date,
-        end_date=end_date,
+        start_date=env_start_date,
+        end_date=env_end_date,
         scoped_symbols=scoped_symbols,
         summary=summary,
         rows_to_upsert=rows_to_upsert,
@@ -221,13 +330,17 @@ def main() -> int:
     payload["timeframe"] = "1m"
     payload["artifact_type"] = "market_bars_backfill_1m"
     payload["window"] = {"from_date": start_date, "to_date": end_date}
+    payload["watermark_mode"] = True
+    payload["watermark_summary"] = watermark_summary
     artifact_path_1m = artifact_path.with_name(artifact_path.name.replace("_1d_", "_1m_"))
     artifact_path_1m.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     if artifact_path_1m != artifact_path:
         artifact_path.unlink(missing_ok=True)
 
     if backfill_mode == BACKFILL_MODE_CUTOVER:
-        _upsert_market_bars(db_path, rows_to_upsert)
+        if rows_to_upsert:
+            _upsert_market_bars(db_path, rows_to_upsert)
+        _upsert_1m_watermarks(db_path, per_symbol_max_ts, ingested_at)
         print("backfill_mode=cutover")
         print(f"rows_upserted={len(rows_to_upsert)}")
     else:

@@ -1,29 +1,90 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 
-from tradly.ops.preflight_catchup import _classify_macro_age_days, _intraday_source_status
+import duckdb
+
+from tradly.ops.preflight_catchup import (
+    _intraday_source_status,
+    _load_1m_watermark_coverage,
+    _load_1m_watermark_max,
+    _load_macro_refresh_state,
+)
 
 
 class PreflightCatchupTests(unittest.TestCase):
-    def test_macro_age_is_fresh_inside_warn_threshold(self) -> None:
-        self.assertEqual(
-            _classify_macro_age_days(age_days=2, warn_after_days=2, block_after_days=5),
-            "fresh",
-        )
+    def test_load_macro_refresh_state_requires_all_series(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            conn = duckdb.connect(str(db_path))
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE macro_points (
+                      series_id TEXT NOT NULL,
+                      ts_utc TIMESTAMP NOT NULL,
+                      as_of_utc TIMESTAMP NOT NULL,
+                      value DOUBLE,
+                      source TEXT NOT NULL,
+                      ingested_at_utc TIMESTAMP NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO macro_points VALUES
+                    ('DGS2', '2026-03-12 00:00:00', '2026-03-16 18:00:00', 4.1, 'fred', '2026-03-16 18:00:00'),
+                    ('DGS10', '2026-03-12 00:00:00', '2026-03-16 18:01:00', 4.2, 'fred', '2026-03-16 18:01:00'),
+                    ('DFF', '2026-03-12 00:00:00', '2026-03-16 18:02:00', 4.3, 'fred', '2026-03-16 18:02:00')
+                    """
+                )
+                oldest_refresh, coverage_complete, latest_obs_by_series = _load_macro_refresh_state(conn)
+            finally:
+                conn.close()
 
-    def test_macro_age_is_warning_between_warn_and_block_thresholds(self) -> None:
-        self.assertEqual(
-            _classify_macro_age_days(age_days=3, warn_after_days=2, block_after_days=5),
-            "warning",
-        )
+            self.assertEqual(oldest_refresh, datetime(2026, 3, 16, 18, 0, tzinfo=timezone.utc))
+            self.assertFalse(coverage_complete)
+            self.assertEqual(
+                latest_obs_by_series,
+                {"DFF": "2026-03-12", "DGS10": "2026-03-12", "DGS2": "2026-03-12"},
+            )
 
-    def test_macro_age_is_stale_beyond_block_threshold(self) -> None:
-        self.assertEqual(
-            _classify_macro_age_days(age_days=6, warn_after_days=2, block_after_days=5),
-            "stale",
-        )
+    def test_load_macro_refresh_state_returns_oldest_refresh_across_series(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            conn = duckdb.connect(str(db_path))
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE macro_points (
+                      series_id TEXT NOT NULL,
+                      ts_utc TIMESTAMP NOT NULL,
+                      as_of_utc TIMESTAMP NOT NULL,
+                      value DOUBLE,
+                      source TEXT NOT NULL,
+                      ingested_at_utc TIMESTAMP NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO macro_points VALUES
+                    ('DGS2', '2026-03-12 00:00:00', '2026-03-16 18:00:00', 4.1, 'fred', '2026-03-16 18:00:00'),
+                    ('DGS10', '2026-03-12 00:00:00', '2026-03-16 18:01:00', 4.2, 'fred', '2026-03-16 18:01:00'),
+                    ('DFF', '2026-03-12 00:00:00', '2026-03-16 18:02:00', 4.3, 'fred', '2026-03-16 18:02:00'),
+                    ('VIXCLS', '2026-03-13 00:00:00', '2026-03-16 17:59:00', 22.0, 'fred', '2026-03-16 17:59:00')
+                    """
+                )
+                oldest_refresh, coverage_complete, latest_obs_by_series = _load_macro_refresh_state(conn)
+            finally:
+                conn.close()
+
+            self.assertEqual(oldest_refresh, datetime(2026, 3, 16, 17, 59, tzinfo=timezone.utc))
+            self.assertTrue(coverage_complete)
+            self.assertEqual(latest_obs_by_series["VIXCLS"], "2026-03-13")
 
     def test_intraday_source_not_required_on_weekend(self) -> None:
         self.assertEqual(
@@ -46,6 +107,67 @@ class PreflightCatchupTests(unittest.TestCase):
             ),
             ("missing", None),
         )
+
+    def test_load_1m_watermark_max_uses_oldest_symbol_watermark(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            conn = duckdb.connect(str(db_path))
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE pipeline_watermarks (
+                      source_name TEXT NOT NULL,
+                      scope_key TEXT NOT NULL,
+                      watermark_ts_utc TIMESTAMP,
+                      watermark_meta_json TEXT,
+                      updated_at_utc TIMESTAMP NOT NULL,
+                      PRIMARY KEY (source_name, scope_key)
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO pipeline_watermarks VALUES
+                    ('market_bars_1m', 'AAPL', '2026-03-16 14:31:00', '{}', '2026-03-16 14:32:00'),
+                    ('market_bars_1m', 'MSFT', '2026-03-16 14:29:00', '{}', '2026-03-16 14:32:00')
+                    """
+                )
+                value = _load_1m_watermark_max(conn)
+            finally:
+                conn.close()
+
+            self.assertEqual(value, datetime(2026, 3, 16, 14, 29))
+
+    def test_load_1m_watermark_coverage_flags_missing_scope_symbols(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            conn = duckdb.connect(str(db_path))
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE pipeline_watermarks (
+                      source_name TEXT NOT NULL,
+                      scope_key TEXT NOT NULL,
+                      watermark_ts_utc TIMESTAMP,
+                      watermark_meta_json TEXT,
+                      updated_at_utc TIMESTAMP NOT NULL,
+                      PRIMARY KEY (source_name, scope_key)
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO pipeline_watermarks VALUES
+                    ('market_bars_1m', 'AAPL', '2026-03-16 14:31:00', '{}', '2026-03-16 14:32:00')
+                    """
+                )
+                min_watermark, coverage_complete, coverage_count = _load_1m_watermark_coverage(conn, ["AAPL", "MSFT"])
+            finally:
+                conn.close()
+
+            self.assertEqual(min_watermark, datetime(2026, 3, 16, 14, 31))
+            self.assertFalse(coverage_complete)
+            self.assertEqual(coverage_count, 1)
 
 
 if __name__ == "__main__":

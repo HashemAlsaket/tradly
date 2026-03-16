@@ -18,6 +18,7 @@ DEFAULT_DAILY_BUDGET = 100
 DEFAULT_LIMIT_PER_REQUEST = 3
 DEFAULT_PULLS_PER_BUCKET_PER_RUN = 1
 DEFAULT_MIN_SYMBOL_RELEVANCE = 15.0
+NEWS_WATERMARK_SOURCE = "news_events_marketaux_bucket"
 REQUIRED_BUCKETS = (
     "core_semis",
     "us_macro",
@@ -114,6 +115,7 @@ def _fetch_marketaux_news(
     symbols: list[str],
     limit: int,
     published_after_utc: str | None,
+    page: int,
 ) -> tuple[int, str, list[dict]]:
     params = urllib.parse.urlencode(
         {
@@ -122,6 +124,7 @@ def _fetch_marketaux_news(
             "filter_entities": "true",
             "language": "en",
             "limit": str(limit),
+            "page": str(page),
             **({"published_after": published_after_utc} if published_after_utc else {}),
         }
     )
@@ -159,6 +162,109 @@ def _ensure_tables(conn) -> None:
           created_at_utc TIMESTAMP NOT NULL
         )
         """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pipeline_watermarks (
+          source_name TEXT NOT NULL,
+          scope_key TEXT NOT NULL,
+          watermark_ts_utc TIMESTAMP,
+          watermark_meta_json TEXT,
+          updated_at_utc TIMESTAMP NOT NULL,
+          PRIMARY KEY (source_name, scope_key)
+        )
+        """
+    )
+
+
+def _load_news_watermarks(conn, buckets: list[str]) -> dict[str, datetime]:
+    if not buckets:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT scope_key, watermark_ts_utc
+        FROM pipeline_watermarks
+        WHERE source_name = ?
+          AND scope_key IN ({placeholders})
+        """.format(placeholders=",".join("?" for _ in buckets)),
+        [NEWS_WATERMARK_SOURCE, *buckets],
+    ).fetchall()
+    return {str(scope_key): watermark_ts_utc for scope_key, watermark_ts_utc in rows if watermark_ts_utc is not None}
+
+
+def _effective_published_after(
+    env_published_after_utc: str | None,
+    watermark_ts_utc: datetime | None,
+) -> str | None:
+    env_value = _normalize_published_after(env_published_after_utc)
+    if env_value:
+        return env_value
+    if watermark_ts_utc is None:
+        return None
+    return watermark_ts_utc.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _parse_marketaux_published_at(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _should_continue_news_pagination(
+    *,
+    page_articles: list[dict],
+    previous_watermark: datetime | None,
+) -> bool:
+    if not page_articles:
+        return False
+    if previous_watermark is None:
+        return True
+    oldest_article = None
+    for item in page_articles:
+        published_at = _parse_marketaux_published_at(str(item.get("published_at") or "").strip())
+        if published_at is None:
+            continue
+        if oldest_article is None or published_at < oldest_article:
+            oldest_article = published_at
+    if oldest_article is None:
+        return False
+    return oldest_article > previous_watermark
+
+
+def _upsert_news_watermarks(conn, per_bucket_max_published_at: dict[str, datetime], updated_at: datetime) -> None:
+    if not per_bucket_max_published_at:
+        return
+    conn.executemany(
+        """
+        INSERT INTO pipeline_watermarks (
+          source_name,
+          scope_key,
+          watermark_ts_utc,
+          watermark_meta_json,
+          updated_at_utc
+        )
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (source_name, scope_key) DO UPDATE SET
+          watermark_ts_utc = excluded.watermark_ts_utc,
+          watermark_meta_json = excluded.watermark_meta_json,
+          updated_at_utc = excluded.updated_at_utc
+        """,
+        [
+            (
+                NEWS_WATERMARK_SOURCE,
+                bucket,
+                published_at,
+                json.dumps({"mode": "published_at_high_water_mark"}, ensure_ascii=True),
+                updated_at,
+            )
+            for bucket, published_at in per_bucket_max_published_at.items()
+        ],
     )
 
 
@@ -213,7 +319,7 @@ def main() -> int:
 
     time_ctx = get_time_context()
     now_db_utc = to_db_utc(time_ctx.now_utc)
-    published_after_utc = _normalize_published_after(os.getenv("TRADLY_NEWS_PUBLISHED_AFTER_UTC", ""))
+    published_after_utc_raw = os.getenv("TRADLY_NEWS_PUBLISHED_AFTER_UTC", "")
     min_symbol_relevance = _min_symbol_relevance()
     # Budgeting is aligned to trader workflow timezone (America/Chicago), not UTC midnight.
     request_date_utc = time_ctx.now_local.date()
@@ -264,6 +370,8 @@ def main() -> int:
         filtered_symbol_links_total = 0
         requests_made = 0
         stop_all_buckets = False
+        news_watermarks = _load_news_watermarks(conn, list(buckets.keys()))
+        per_bucket_max_published_at: dict[str, datetime] = {}
 
         for bucket, symbols in buckets.items():
             if stop_all_buckets:
@@ -280,7 +388,12 @@ def main() -> int:
                 print(f"bucket_skip={bucket} reason=cap_reached used={bucket_used} cap={cap}")
                 continue
 
-            for _pull_idx in range(pulls_per_bucket_per_run):
+            previous_watermark = news_watermarks.get(bucket)
+            effective_published_after_utc = _effective_published_after(
+                published_after_utc_raw,
+                previous_watermark,
+            )
+            for page in range(1, pulls_per_bucket_per_run + 1):
                 if requests_made >= run_max_requests:
                     stop_all_buckets = True
                     print(
@@ -297,7 +410,8 @@ def main() -> int:
                         api_token,
                         symbols,
                         limit_per_request,
-                        published_after_utc,
+                        effective_published_after_utc,
+                        page,
                     )
                 except Exception as exc:
                     status_code = 0
@@ -324,12 +438,18 @@ def main() -> int:
                 symbol_rows: list[tuple] = []
                 filtered_symbol_links = 0
                 if response_status == "success":
+                    bucket_latest_published_at = per_bucket_max_published_at.get(bucket)
                     for item in articles:
                         news_id = str(item.get("uuid") or "").strip()
                         title = str(item.get("title") or "").strip()
                         published_at = str(item.get("published_at") or "").strip()
                         if not news_id or not title or not published_at:
                             continue
+                        published_at_dt = _parse_marketaux_published_at(published_at)
+                        if published_at_dt is not None and (
+                            bucket_latest_published_at is None or published_at_dt > bucket_latest_published_at
+                        ):
+                            bucket_latest_published_at = published_at_dt
 
                         source = item.get("source") if isinstance(item.get("source"), str) else "unknown"
                         sentiment = item.get("sentiment")
@@ -370,6 +490,8 @@ def main() -> int:
                                     now_db_utc,
                                 )
                             )
+                    if bucket_latest_published_at is not None:
+                        per_bucket_max_published_at[bucket] = bucket_latest_published_at
 
                 if event_rows:
                     conn.executemany(
@@ -439,7 +561,15 @@ def main() -> int:
                 if response_status == "limit_reached":
                     stop_all_buckets = True
                     break
+                if response_status != "success":
+                    break
+                if not _should_continue_news_pagination(
+                    page_articles=articles,
+                    previous_watermark=previous_watermark,
+                ):
+                    break
 
+        _upsert_news_watermarks(conn, per_bucket_max_published_at, now_db_utc)
         conn.commit()
     finally:
         conn.close()
