@@ -131,6 +131,16 @@ CREATE TABLE IF NOT EXISTS market_snapshots (
   FOREIGN KEY (symbol) REFERENCES instruments(symbol)
 );
 
+-- 5c) Pipeline watermarks (verified refresh progress per source/scope)
+CREATE TABLE IF NOT EXISTS pipeline_watermarks (
+  source_name TEXT NOT NULL,
+  scope_key TEXT NOT NULL,
+  watermark_ts_utc TIMESTAMP,
+  watermark_meta_json TEXT,
+  updated_at_utc TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, scope_key)
+);
+
 -- 6) Run manifests (one row per decision cycle)
 CREATE TABLE IF NOT EXISTS run_manifests (
   run_id TEXT PRIMARY KEY,

@@ -5,21 +5,28 @@ from datetime import datetime, timezone
 
 from tradly.ops.runtime_freshness_audit import (
     FreshnessCheck,
-    _freshness_mode,
     _intraday_source_status,
     _medium_horizon_thesis_usable,
+)
+from tradly.services.session_freshness_policy import (
+    freshness_mode_for_policy,
+    freshness_policy_for_session,
 )
 
 
 class RuntimeFreshnessAuditTests(unittest.TestCase):
     def test_weekend_and_holiday_use_closed_calendar_mode(self) -> None:
-        self.assertEqual(_freshness_mode(market_session="weekend"), "closed_calendar")
-        self.assertEqual(_freshness_mode(market_session="holiday"), "closed_calendar")
+        self.assertEqual(freshness_policy_for_session("weekend"), "closed_calendar_relaxed")
+        self.assertEqual(freshness_policy_for_session("holiday"), "closed_calendar_relaxed")
+        self.assertEqual(freshness_mode_for_policy("closed_calendar_relaxed"), "closed_calendar")
 
     def test_market_hours_and_regular_offhours_modes(self) -> None:
-        self.assertEqual(_freshness_mode(market_session="market_hours"), "market_hours")
-        self.assertEqual(_freshness_mode(market_session="pre_market"), "offhours")
-        self.assertEqual(_freshness_mode(market_session="after_hours"), "offhours")
+        self.assertEqual(freshness_policy_for_session("market_hours"), "market_hours_strict")
+        self.assertEqual(freshness_policy_for_session("pre_market"), "premarket_strict")
+        self.assertEqual(freshness_policy_for_session("after_hours"), "after_hours_relaxed")
+        self.assertEqual(freshness_mode_for_policy("market_hours_strict"), "market_hours")
+        self.assertEqual(freshness_mode_for_policy("premarket_strict"), "offhours")
+        self.assertEqual(freshness_mode_for_policy("after_hours_relaxed"), "offhours")
 
     def test_medium_horizon_thesis_usable_when_core_checks_pass(self) -> None:
         checks = [
@@ -67,7 +74,7 @@ class RuntimeFreshnessAuditTests(unittest.TestCase):
         status, age = _intraday_source_status(
             latest_ts=None,
             now_utc=datetime(2026, 3, 16, 4, 0, tzinfo=timezone.utc),
-            market_session="weekend",
+            freshness_policy="closed_calendar_relaxed",
             max_age_sec=1200,
         )
         self.assertEqual((status, age), ("not_required", None))
@@ -76,11 +83,21 @@ class RuntimeFreshnessAuditTests(unittest.TestCase):
         status, age = _intraday_source_status(
             latest_ts=datetime(2026, 3, 16, 13, 0),
             now_utc=datetime(2026, 3, 16, 15, 0, tzinfo=timezone.utc),
-            market_session="market_hours",
+            freshness_policy="market_hours_strict",
             max_age_sec=1200,
         )
         self.assertEqual(status, "stale")
         self.assertEqual(age, 7200)
+
+    def test_intraday_source_stale_but_tracked_in_after_hours(self) -> None:
+        status, age = _intraday_source_status(
+            latest_ts=datetime(2026, 3, 16, 20, 30),
+            now_utc=datetime(2026, 3, 16, 21, 0, tzinfo=timezone.utc),
+            freshness_policy="after_hours_relaxed",
+            max_age_sec=1200,
+        )
+        self.assertEqual(status, "stale")
+        self.assertEqual(age, 1800)
 
 
 if __name__ == "__main__":

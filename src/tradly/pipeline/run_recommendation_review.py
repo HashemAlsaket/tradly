@@ -6,10 +6,11 @@ from pathlib import Path
 
 from tradly.config import get_model_registry_entry
 from tradly.models.recommendation_review import build_review_rows
-from tradly.ops.runtime_freshness_audit import _intraday_source_status, _session_requires_intraday
+from tradly.ops.runtime_freshness_audit import _intraday_source_status
 from tradly.paths import get_repo_root
 from tradly.services.artifact_alignment import assess_artifact_alignment
 from tradly.services.market_calendar import market_session_state
+from tradly.services.session_freshness_policy import freshness_policy_for_session, policy_uses_intraday
 from tradly.services.time_context import get_time_context
 
 MAX_UPSTREAM_AGE = timedelta(hours=6)
@@ -83,25 +84,27 @@ def _intraday_actionable(*, repo_root: Path, now_utc) -> tuple[bool, dict[str, o
         conn.close()
 
     market_session = market_session_state(now_utc)
+    freshness_policy = freshness_policy_for_session(market_session)
     intraday_status, _ = _intraday_source_status(
         latest_ts=latest_intraday_bar,
         now_utc=now_utc,
-        market_session=market_session,
+        freshness_policy=freshness_policy,
         max_age_sec=1200,
     )
     snapshot_status, _ = _intraday_source_status(
         latest_ts=latest_snapshot,
         now_utc=now_utc,
-        market_session=market_session,
+        freshness_policy=freshness_policy,
         max_age_sec=1200,
     )
     actionable = (
-        not _session_requires_intraday(now_utc=now_utc, market_session=market_session)
+        not policy_uses_intraday(freshness_policy)
         or intraday_status == "fresh"
         or snapshot_status == "fresh"
     )
     return actionable, {
         "market_session_state": market_session,
+        "freshness_policy": freshness_policy,
         "intraday_bar_status": intraday_status,
         "snapshot_status": snapshot_status,
     }
