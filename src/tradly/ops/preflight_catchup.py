@@ -12,6 +12,7 @@ from tradly.paths import get_repo_root
 from tradly.pipeline.ingest_market_bars import _load_market_data_symbols
 from tradly.services.db_time import from_db_utc
 from tradly.services.market_calendar import market_session_state, previous_trading_day
+from tradly.services.news_bucket_health import load_news_bucket_health, summarize_news_bucket_health
 from tradly.services.session_freshness_policy import (
     freshness_policy_for_session,
     policy_relaxes_intraday,
@@ -215,6 +216,12 @@ def main() -> int:
         )
         latest_news_event = conn.execute("SELECT MAX(published_at_utc) FROM news_events").fetchone()[0]
         latest_interp = conn.execute("SELECT MAX(interpreted_at_utc) FROM news_interpretations").fetchone()[0]
+        news_bucket_rows = load_news_bucket_health(
+            conn,
+            request_date_local=now_local.date(),
+            now_utc=now_utc,
+            max_age_sec=news_pull_max_age_sec,
+        )
         latest_macro_refresh, macro_coverage_complete, latest_macro_obs_by_series = _load_macro_refresh_state(conn)
     finally:
         conn.close()
@@ -307,8 +314,12 @@ def main() -> int:
     )
 
     news_pull_age = _age_seconds(latest_news_pull, now_utc)
+    required_bucket_failures, optional_bucket_warnings, _news_bucket_statuses = summarize_news_bucket_health(news_bucket_rows)
     news_pull_stale = (
-        news_pull_age is None or news_pull_age > news_pull_max_age_sec or success_news_pulls_today < 1
+        news_pull_age is None
+        or news_pull_age > news_pull_max_age_sec
+        or success_news_pulls_today < 1
+        or bool(required_bucket_failures)
     )
     lags.append(
         SourceLag(
@@ -316,7 +327,9 @@ def main() -> int:
             status="stale" if news_pull_stale else "fresh",
             detail=(
                 f"age_sec={news_pull_age} max_age_sec={news_pull_max_age_sec} "
-                f"success_pulls_today={success_news_pulls_today}"
+                f"success_pulls_today={success_news_pulls_today} "
+                f"required_bucket_failures={required_bucket_failures} "
+                f"optional_bucket_warnings={optional_bucket_warnings}"
             ),
             backfill_from=(now_local - timedelta(hours=6)).isoformat() if news_pull_stale else None,
             backfill_to=now_local.isoformat() if news_pull_stale else None,
@@ -365,6 +378,7 @@ def main() -> int:
         market_lag = next((lag for lag in lags if lag.source == "market_bars_1d"), None)
         env_market = dict(env)
         env_market["TRADLY_MARKET_BACKFILL_MODE"] = "cutover"
+        env_market["TRADLY_MARKET_VALIDATION_MODE"] = "incremental"
         if market_lag and market_lag.backfill_from and market_lag.backfill_to:
             env_market["TRADLY_MARKET_FROM_DATE"] = market_lag.backfill_from
             env_market["TRADLY_MARKET_TO_DATE"] = market_lag.backfill_to
@@ -539,6 +553,12 @@ def main() -> int:
             or 0
         )
         final_latest_macro_refresh, final_macro_coverage_complete, final_macro_obs_by_series = _load_macro_refresh_state(conn)
+        final_news_bucket_rows = load_news_bucket_health(
+            conn,
+            request_date_local=now_local.date(),
+            now_utc=now_utc,
+            max_age_sec=news_pull_max_age_sec,
+        )
     finally:
         conn.close()
 
@@ -608,8 +628,12 @@ def main() -> int:
     )
 
     final_news_age = _age_seconds(final_latest_news_pull, now_utc)
+    final_required_bucket_failures, final_optional_bucket_warnings, _final_news_bucket_statuses = summarize_news_bucket_health(final_news_bucket_rows)
     final_news_stale = (
-        final_news_age is None or final_news_age > news_pull_max_age_sec or final_success_news_pulls_today < 1
+        final_news_age is None
+        or final_news_age > news_pull_max_age_sec
+        or final_success_news_pulls_today < 1
+        or bool(final_required_bucket_failures)
     )
     final_lags.append(
         SourceLag(
@@ -617,7 +641,9 @@ def main() -> int:
             status="stale" if final_news_stale else "fresh",
             detail=(
                 f"age_sec={final_news_age} max_age_sec={news_pull_max_age_sec} "
-                f"success_pulls_today={final_success_news_pulls_today}"
+                f"success_pulls_today={final_success_news_pulls_today} "
+                f"required_bucket_failures={final_required_bucket_failures} "
+                f"optional_bucket_warnings={final_optional_bucket_warnings}"
             ),
         )
     )

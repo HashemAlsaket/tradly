@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from tradly.paths import get_repo_root
 from tradly.services.db_time import to_db_utc
+from tradly.services.news_bucket_health import REQUIRED_NEWS_BUCKETS
 from tradly.services.time_context import get_time_context
 
 
@@ -27,6 +28,12 @@ REQUIRED_BUCKETS = (
     "sector_context",
     "event_reserve",
 )
+
+
+def _artifact_output_path(repo_root: Path, run_date: str) -> Path:
+    out_dir = repo_root / "data" / "runs" / run_date
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir / "news_budgeted_run.json"
 
 
 def _min_symbol_relevance() -> float:
@@ -319,6 +326,7 @@ def main() -> int:
 
     time_ctx = get_time_context()
     now_db_utc = to_db_utc(time_ctx.now_utc)
+    run_date = time_ctx.now_utc.strftime("%Y-%m-%d")
     published_after_utc_raw = os.getenv("TRADLY_NEWS_PUBLISHED_AFTER_UTC", "")
     min_symbol_relevance = _min_symbol_relevance()
     # Budgeting is aligned to trader workflow timezone (America/Chicago), not UTC midnight.
@@ -372,6 +380,19 @@ def main() -> int:
         stop_all_buckets = False
         news_watermarks = _load_news_watermarks(conn, list(buckets.keys()))
         per_bucket_max_published_at: dict[str, datetime] = {}
+        bucket_results: dict[str, dict[str, object]] = {
+            bucket: {
+                "configured": True,
+                "freshness_required": bucket in REQUIRED_NEWS_BUCKETS,
+                "previous_watermark_utc": news_watermarks.get(bucket).isoformat() if news_watermarks.get(bucket) else None,
+                "latest_published_at_utc": None,
+                "last_response_status": None,
+                "requests_made": 0,
+                "events_upserted": 0,
+                "symbol_links_upserted": 0,
+            }
+            for bucket in buckets
+        }
 
         for bucket, symbols in buckets.items():
             if stop_all_buckets:
@@ -418,6 +439,7 @@ def main() -> int:
                     body = f"network_error:{exc}"
                     articles = []
                 requests_made += 1
+                bucket_results[bucket]["requests_made"] = int(bucket_results[bucket]["requests_made"]) + 1
                 used_total += 1
                 bucket_used += 1
                 used_by_bucket[bucket] = bucket_used
@@ -553,6 +575,11 @@ def main() -> int:
                 events_upserted_total += len(event_rows)
                 symbols_upserted_total += len(symbol_rows)
                 filtered_symbol_links_total += filtered_symbol_links
+                bucket_results[bucket]["last_response_status"] = response_status
+                bucket_results[bucket]["events_upserted"] = int(bucket_results[bucket]["events_upserted"]) + len(event_rows)
+                bucket_results[bucket]["symbol_links_upserted"] = int(bucket_results[bucket]["symbol_links_upserted"]) + len(symbol_rows)
+                if bucket in per_bucket_max_published_at:
+                    bucket_results[bucket]["latest_published_at_utc"] = per_bucket_max_published_at[bucket].isoformat()
                 print(
                     f"bucket={bucket} status={response_status} req_used={used_by_bucket[bucket]}/{cap} "
                     f"events={len(event_rows)} symbol_links={len(symbol_rows)} "
@@ -574,6 +601,27 @@ def main() -> int:
     finally:
         conn.close()
 
+    artifact_path = _artifact_output_path(repo_root, run_date)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "run_timestamp_utc": time_ctx.now_utc.isoformat(),
+                "run_timestamp_local": time_ctx.now_local.isoformat(),
+                "local_timezone": time_ctx.local_timezone,
+                "provider": "marketaux",
+                "requests_made": requests_made,
+                "run_max_requests": run_max_requests,
+                "daily_budget": daily_budget,
+                "events_upserted": events_upserted_total,
+                "symbol_links_upserted": symbols_upserted_total,
+                "symbol_links_filtered_below_relevance": filtered_symbol_links_total,
+                "bucket_results": bucket_results,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
     print(f"requests_made={requests_made}")
     print(f"run_max_requests={run_max_requests}")
     print(f"events_upserted={events_upserted_total}")
@@ -581,6 +629,7 @@ def main() -> int:
     print(f"symbol_links_filtered_below_relevance={filtered_symbol_links_total}")
     print(f"min_symbol_relevance={min_symbol_relevance}")
     print(f"daily_budget={daily_budget}")
+    print(f"artifact={artifact_path}")
     return 0
 
 

@@ -14,6 +14,7 @@ from tradly.services.market_calendar import (
     market_session_state,
     previous_trading_day,
 )
+from tradly.services.news_bucket_health import load_news_bucket_health, summarize_news_bucket_health
 from tradly.services.session_freshness_policy import (
     freshness_mode_for_policy,
     freshness_policy_for_session,
@@ -213,6 +214,20 @@ def main() -> int:
         latest_interp_utc = conn.execute("SELECT MAX(interpreted_at_utc) FROM news_interpretations").fetchone()[0]
         latest_macro_points_utc = conn.execute("SELECT MAX(ts_utc) FROM macro_points").fetchone()[0]
         latest_macro_as_of_utc = conn.execute("SELECT MAX(as_of_utc) FROM macro_points").fetchone()[0]
+        news_bucket_rows = load_news_bucket_health(
+            conn,
+            request_date_local=now_local.date(),
+            now_utc=now_utc,
+            max_age_sec=(
+                news_max_age_min_market * 60
+                if freshness_mode == "market_hours"
+                else (
+                    news_max_age_min_closed_calendar * 60
+                    if freshness_mode == "closed_calendar"
+                    else news_max_age_min_offhours * 60
+                )
+            ),
+        )
         pending_uninterpreted_24h = int(
             conn.execute(
                 """
@@ -267,6 +282,7 @@ def main() -> int:
             )
 
     # Pull recency is the correct heartbeat signal even when no new events are returned.
+    required_bucket_failures, optional_bucket_warnings, news_bucket_statuses = summarize_news_bucket_health(news_bucket_rows)
     if latest_news_pull_utc is None:
         checks.append(FreshnessCheck("news_pull_recency", "FAIL", "no news pull usage rows for local date"))
     else:
@@ -290,6 +306,7 @@ def main() -> int:
             if age_sec <= max_age_sec
             and success_news_pulls_today >= min_success
             and success_rate >= min_success_rate
+            and not required_bucket_failures
             else "FAIL"
         )
         checks.append(
@@ -300,10 +317,28 @@ def main() -> int:
                     f"age_sec={age_sec} max_age_sec={max_age_sec} market_hours={market_hours} "
                     f"freshness_mode={freshness_mode} market_session={market_session} "
                     f"success_pulls_today={success_news_pulls_today} total_pulls_today={total_news_pulls_today} "
-                    f"min_success={min_success} success_rate={success_rate:.3f} min_success_rate={min_success_rate:.3f}"
+                    f"min_success={min_success} success_rate={success_rate:.3f} min_success_rate={min_success_rate:.3f} "
+                    f"required_bucket_failures={required_bucket_failures} "
+                    f"optional_bucket_warnings={optional_bucket_warnings}"
                 ),
             )
         )
+
+    bucket_check_status = "PASS"
+    if required_bucket_failures:
+        bucket_check_status = "FAIL"
+    elif optional_bucket_warnings:
+        bucket_check_status = "WARN"
+    checks.append(
+        FreshnessCheck(
+            "news_bucket_health",
+            bucket_check_status,
+            (
+                f"required_bucket_failures={required_bucket_failures} "
+                f"optional_bucket_warnings={optional_bucket_warnings}"
+            ),
+        )
+    )
 
     # If no recent pending articles exist, interpretation staleness should not fail the run.
     if latest_interp_utc is None and pending_uninterpreted_24h > 0:
@@ -450,6 +485,9 @@ def main() -> int:
             "snapshot_status": snapshot_status,
             "latest_news_pull_utc": from_db_utc(latest_news_pull_utc).isoformat() if latest_news_pull_utc else None,
             "latest_interp_utc": from_db_utc(latest_interp_utc).isoformat() if latest_interp_utc else None,
+            "news_bucket_statuses": news_bucket_statuses,
+            "news_required_bucket_failures": required_bucket_failures,
+            "news_optional_bucket_warnings": optional_bucket_warnings,
             "latest_macro_points_utc": from_db_utc(latest_macro_points_utc).isoformat() if latest_macro_points_utc else None,
             "latest_macro_as_of_utc": from_db_utc(latest_macro_as_of_utc).isoformat() if latest_macro_as_of_utc else None,
             "success_news_pulls_today": success_news_pulls_today,

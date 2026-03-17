@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 from urllib.error import HTTPError, URLError
@@ -11,6 +11,7 @@ from urllib.request import urlopen
 
 from tradly.paths import get_repo_root
 from tradly.services.db_time import to_db_utc
+from tradly.services.market_calendar import is_trading_day
 from tradly.services.time_context import get_time_context
 
 
@@ -22,6 +23,10 @@ PROVIDER_SOURCE = "massive"
 BACKFILL_DATA_STATUS = "DELAYED"
 BACKFILL_MODE_VALIDATE = "validate"
 BACKFILL_MODE_CUTOVER = "cutover"
+VALIDATION_MODE_AUTO = "auto"
+VALIDATION_MODE_BOOTSTRAP = "bootstrap"
+VALIDATION_MODE_INCREMENTAL = "incremental"
+INCREMENTAL_WINDOW_MAX_DAYS = 14
 
 
 def _load_dotenv(path: Path) -> None:
@@ -47,6 +52,29 @@ def _get_backfill_mode() -> str:
     if raw not in {BACKFILL_MODE_VALIDATE, BACKFILL_MODE_CUTOVER}:
         raise RuntimeError(f"invalid_backfill_mode:{raw}")
     return raw
+
+
+def _get_validation_mode(*, start_date: str, end_date: str) -> str:
+    raw = str(os.getenv("TRADLY_MARKET_VALIDATION_MODE", VALIDATION_MODE_AUTO)).strip().lower()
+    if raw not in {VALIDATION_MODE_AUTO, VALIDATION_MODE_BOOTSTRAP, VALIDATION_MODE_INCREMENTAL}:
+        raise RuntimeError(f"invalid_validation_mode:{raw}")
+    if raw != VALIDATION_MODE_AUTO:
+        return raw
+    window_days = (date.fromisoformat(end_date) - date.fromisoformat(start_date)).days + 1
+    if window_days <= INCREMENTAL_WINDOW_MAX_DAYS:
+        return VALIDATION_MODE_INCREMENTAL
+    return VALIDATION_MODE_BOOTSTRAP
+
+
+def _expected_market_dates(start_date: str, end_date: str) -> list[str]:
+    current = date.fromisoformat(start_date)
+    end = date.fromisoformat(end_date)
+    out: list[str] = []
+    while current <= end:
+        if is_trading_day(current):
+            out.append(current.isoformat())
+        current += timedelta(days=1)
+    return out
 
 
 def _build_daily_agg_url(symbol: str, api_key: str, start_date: str, end_date: str) -> str:
@@ -277,6 +305,8 @@ def _write_validation_artifact(
     mode: str,
     start_date: str,
     end_date: str,
+    validation_mode: str,
+    expected_market_dates: list[str],
     scoped_symbols: list[str],
     summary: list[tuple[str, int, str]],
     rows_to_upsert: list[tuple],
@@ -298,6 +328,8 @@ def _write_validation_artifact(
             "from_date": start_date,
             "to_date": end_date,
         },
+        "validation_mode": validation_mode,
+        "expected_market_dates": expected_market_dates,
         "prepared_row_count": len(rows_to_upsert),
         "error_count": len(errors),
         "errors": errors,
@@ -350,6 +382,13 @@ def main() -> int:
     if start_date > end_date:
         print(f"invalid_market_window:start_date={start_date}:end_date={end_date}")
         return 9
+    try:
+        validation_mode = _get_validation_mode(start_date=start_date, end_date=end_date)
+    except RuntimeError as exc:
+        print("ingest_market_bars_v0_failed")
+        print(f"error={exc}")
+        return 12
+    expected_market_dates = _expected_market_dates(start_date, end_date)
     ingested_at = to_db_utc(time_ctx.now_utc)
 
     try:
@@ -392,19 +431,33 @@ def main() -> int:
             errors.append(f"{symbol}:unexpected:{exc}")
             continue
 
-        if len(bars) < MIN_BARS_PER_SYMBOL:
+        if validation_mode == VALIDATION_MODE_BOOTSTRAP and len(bars) < MIN_BARS_PER_SYMBOL:
             errors.append(f"{symbol}:insufficient_bars:{len(bars)}")
             continue
 
         valid_symbol_rows = 0
+        symbol_rows: list[tuple] = []
         for bar in bars:
             try:
-                rows_to_upsert.append(_normalize_daily_bar_row(symbol=symbol, bar=bar, ingested_at=ingested_at))
+                symbol_rows.append(_normalize_daily_bar_row(symbol=symbol, bar=bar, ingested_at=ingested_at))
             except RuntimeError as exc:
                 errors.append(str(exc))
                 valid_symbol_rows = 0
+                symbol_rows = []
                 break
             valid_symbol_rows += 1
+        if validation_mode == VALIDATION_MODE_INCREMENTAL and symbol_rows:
+            observed_market_dates = sorted({row[2].date().isoformat() for row in symbol_rows})
+            missing_market_dates = [day for day in expected_market_dates if day not in observed_market_dates]
+            if missing_market_dates:
+                errors.append(
+                    f"{symbol}:missing_expected_market_dates:{','.join(missing_market_dates)}"
+                )
+                continue
+        elif validation_mode == VALIDATION_MODE_INCREMENTAL and expected_market_dates:
+            errors.append(f"{symbol}:provider_returned_no_rows_for_expected_range")
+            continue
+        rows_to_upsert.extend(symbol_rows)
         summary.append((symbol, valid_symbol_rows, BACKFILL_DATA_STATUS))
 
     if errors:
@@ -423,6 +476,8 @@ def main() -> int:
         mode=backfill_mode,
         start_date=start_date,
         end_date=end_date,
+        validation_mode=validation_mode,
+        expected_market_dates=expected_market_dates,
         scoped_symbols=scoped_symbols,
         summary=summary,
         rows_to_upsert=rows_to_upsert,
