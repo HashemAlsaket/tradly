@@ -14,6 +14,7 @@ from tradly.services.market_calendar import (
     market_session_state,
     previous_trading_day,
 )
+from tradly.services.market_watermarks import load_1m_watermark_coverage as shared_load_1m_watermark_coverage
 from tradly.services.news_bucket_health import load_news_bucket_health, summarize_news_bucket_health
 from tradly.services.session_freshness_policy import (
     freshness_mode_for_policy,
@@ -27,9 +28,6 @@ from tradly.services.time_context import get_time_context
 MARKET_OPEN_CT = time(8, 30)
 MARKET_CLOSE_CT = time(15, 0)
 MARKET_TZ = ZoneInfo("America/New_York")
-WATERMARK_SOURCE_NAME_1M = "market_bars_1m"
-
-
 @dataclass(frozen=True)
 class FreshnessCheck:
     name: str
@@ -85,33 +83,6 @@ def _intraday_source_status(
     if age_sec is None:
         return "missing", None
     return ("fresh", age_sec) if age_sec <= max_age_sec else ("stale", age_sec)
-
-
-def _load_1m_watermark_coverage(conn, scoped_symbols: list[str]) -> tuple[datetime | None, bool, int]:
-    if not scoped_symbols:
-        return None, True, 0
-    table_exists = conn.execute(
-        """
-        SELECT COUNT(*)
-        FROM information_schema.tables
-        WHERE table_name = 'pipeline_watermarks'
-        """
-    ).fetchone()[0]
-    if not table_exists:
-        return None, False, 0
-    rows = conn.execute(
-        """
-        SELECT scope_key, watermark_ts_utc
-        FROM pipeline_watermarks
-        WHERE source_name = ?
-        """,
-        (WATERMARK_SOURCE_NAME_1M,),
-    ).fetchall()
-    scoped = {str(scope_key): watermark_ts_utc for scope_key, watermark_ts_utc in rows if str(scope_key) in scoped_symbols}
-    coverage_count = len(scoped)
-    coverage_complete = coverage_count == len(scoped_symbols)
-    floor = min(scoped.values()) if scoped else None
-    return floor, coverage_complete, coverage_count
 
 
 def _medium_horizon_thesis_usable(
@@ -171,7 +142,7 @@ def main() -> int:
         latest_intraday_bar_max_utc = conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1m'"
         ).fetchone()[0]
-        latest_intraday_bar_utc, intraday_watermark_coverage_complete, intraday_watermark_coverage_count = _load_1m_watermark_coverage(
+        latest_intraday_bar_utc, intraday_watermark_coverage_complete, intraday_watermark_coverage_count = shared_load_1m_watermark_coverage(
             conn, scoped_symbols
         )
         if latest_intraday_bar_utc is None:

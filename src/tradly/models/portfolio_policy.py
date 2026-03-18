@@ -5,7 +5,7 @@ from typing import Any
 
 
 MEANINGFUL_WEIGHT_DELTA = 0.005
-STRICT_POLICIES = {"premarket_strict", "market_hours_strict"}
+STRICT_POLICIES = {"market_hours_strict"}
 LONG_ACTIONS = {"Buy", "Watch Buy"}
 NON_LONG_ACTIONS = {"Sell/Trim", "Watch Trim", "Hold", "Hold/Watch", "Defer", "Defer Buy", "Defer Trim", "Blocked", "Unknown"}
 ACTIVE_ORDER_STATUSES = {"new", "open", "working", "accepted", "pending", "queued", "submitted"}

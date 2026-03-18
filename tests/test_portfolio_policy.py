@@ -25,7 +25,7 @@ def _market_payload(*, macro_state: str = "macro_unstable", signal_direction: st
 
 
 def _freshness_snapshot(*, policy: str = "after_hours_relaxed", short_ready: bool = True, medium_ready: bool = True) -> dict:
-    session = "after_hours" if policy == "after_hours_relaxed" else "market_hours"
+    session = "after_hours" if policy in {"after_hours_relaxed", "premarket_tradable"} else "market_hours"
     return {
         "freshness": {
             "freshness_policy": policy,

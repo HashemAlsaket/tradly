@@ -12,6 +12,10 @@ from tradly.paths import get_repo_root
 from tradly.pipeline.ingest_market_bars import _load_market_data_symbols
 from tradly.services.db_time import from_db_utc
 from tradly.services.market_calendar import market_session_state, previous_trading_day
+from tradly.services.market_watermarks import (
+    load_1m_watermark_coverage as shared_load_1m_watermark_coverage,
+    load_1m_watermark_min_for_scoped_symbols,
+)
 from tradly.services.news_bucket_health import load_news_bucket_health, summarize_news_bucket_health
 from tradly.services.session_freshness_policy import (
     freshness_policy_for_session,
@@ -30,7 +34,6 @@ class SourceLag:
     backfill_to: str | None = None
 
 
-WATERMARK_SOURCE_NAME_1M = "market_bars_1m"
 MACRO_REQUIRED_SERIES = ("DGS2", "DGS10", "DFF", "VIXCLS")
 MARKET_TZ = ZoneInfo("America/New_York")
 
@@ -120,38 +123,14 @@ def _load_1m_watermark_max(conn) -> datetime | None:
         """
         SELECT MIN(watermark_ts_utc)
         FROM pipeline_watermarks
-        WHERE source_name = ?
-        """,
-        (WATERMARK_SOURCE_NAME_1M,),
+        WHERE source_name = 'market_bars_1m'
+        """
     ).fetchone()
     return row[0] if row else None
 
 
 def _load_1m_watermark_coverage(conn, scoped_symbols: list[str]) -> tuple[datetime | None, bool, int]:
-    if not scoped_symbols:
-        return None, True, 0
-    table_exists = conn.execute(
-        """
-        SELECT COUNT(*)
-        FROM information_schema.tables
-        WHERE table_name = 'pipeline_watermarks'
-        """
-    ).fetchone()[0]
-    if not table_exists:
-        return None, False, 0
-    placeholders = ",".join("?" for _ in scoped_symbols)
-    row = conn.execute(
-        f"""
-        SELECT MIN(watermark_ts_utc), COUNT(*)
-        FROM pipeline_watermarks
-        WHERE source_name = ?
-          AND scope_key IN ({placeholders})
-        """,
-        [WATERMARK_SOURCE_NAME_1M, *scoped_symbols],
-    ).fetchone()
-    min_watermark = row[0] if row else None
-    coverage_count = int(row[1] or 0) if row else 0
-    return min_watermark, coverage_count == len(scoped_symbols), coverage_count
+    return shared_load_1m_watermark_coverage(conn, scoped_symbols)
 
 
 def main() -> int:

@@ -10,8 +10,10 @@ from tradly.ops.runtime_freshness_audit import _intraday_source_status
 from tradly.paths import get_repo_root
 from tradly.services.artifact_alignment import assess_artifact_alignment
 from tradly.services.market_calendar import market_session_state
+from tradly.services.market_watermarks import load_1m_watermark_coverage
 from tradly.services.session_freshness_policy import freshness_policy_for_session, policy_uses_intraday
 from tradly.services.time_context import get_time_context
+from tradly.pipeline.ingest_market_bars import _load_market_data_symbols
 
 MAX_UPSTREAM_AGE = timedelta(hours=6)
 
@@ -74,9 +76,13 @@ def _intraday_actionable(*, repo_root: Path, now_utc) -> tuple[bool, dict[str, o
 
     conn = duckdb.connect(str(db_path), read_only=True)
     try:
-        latest_intraday_bar = conn.execute(
+        latest_intraday_bar_max = conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1m'"
         ).fetchone()[0]
+        scoped_symbols = _load_market_data_symbols(repo_root)
+        latest_intraday_bar, _coverage_complete, _coverage_count = load_1m_watermark_coverage(conn, scoped_symbols)
+        if latest_intraday_bar is None:
+            latest_intraday_bar = latest_intraday_bar_max
         latest_snapshot = conn.execute(
             "SELECT MAX(as_of_utc) FROM market_snapshots"
         ).fetchone()[0]
