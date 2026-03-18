@@ -14,6 +14,8 @@ from tradly.services.market_calendar import (
     market_session_state,
     previous_trading_day,
 )
+from tradly.services.market_watermarks import load_1m_watermark_coverage as shared_load_1m_watermark_coverage
+from tradly.services.news_bucket_health import load_news_bucket_health, summarize_news_bucket_health
 from tradly.services.session_freshness_policy import (
     freshness_mode_for_policy,
     freshness_policy_for_session,
@@ -26,9 +28,6 @@ from tradly.services.time_context import get_time_context
 MARKET_OPEN_CT = time(8, 30)
 MARKET_CLOSE_CT = time(15, 0)
 MARKET_TZ = ZoneInfo("America/New_York")
-WATERMARK_SOURCE_NAME_1M = "market_bars_1m"
-
-
 @dataclass(frozen=True)
 class FreshnessCheck:
     name: str
@@ -84,33 +83,6 @@ def _intraday_source_status(
     if age_sec is None:
         return "missing", None
     return ("fresh", age_sec) if age_sec <= max_age_sec else ("stale", age_sec)
-
-
-def _load_1m_watermark_coverage(conn, scoped_symbols: list[str]) -> tuple[datetime | None, bool, int]:
-    if not scoped_symbols:
-        return None, True, 0
-    table_exists = conn.execute(
-        """
-        SELECT COUNT(*)
-        FROM information_schema.tables
-        WHERE table_name = 'pipeline_watermarks'
-        """
-    ).fetchone()[0]
-    if not table_exists:
-        return None, False, 0
-    rows = conn.execute(
-        """
-        SELECT scope_key, watermark_ts_utc
-        FROM pipeline_watermarks
-        WHERE source_name = ?
-        """,
-        (WATERMARK_SOURCE_NAME_1M,),
-    ).fetchall()
-    scoped = {str(scope_key): watermark_ts_utc for scope_key, watermark_ts_utc in rows if str(scope_key) in scoped_symbols}
-    coverage_count = len(scoped)
-    coverage_complete = coverage_count == len(scoped_symbols)
-    floor = min(scoped.values()) if scoped else None
-    return floor, coverage_complete, coverage_count
 
 
 def _medium_horizon_thesis_usable(
@@ -170,7 +142,7 @@ def main() -> int:
         latest_intraday_bar_max_utc = conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1m'"
         ).fetchone()[0]
-        latest_intraday_bar_utc, intraday_watermark_coverage_complete, intraday_watermark_coverage_count = _load_1m_watermark_coverage(
+        latest_intraday_bar_utc, intraday_watermark_coverage_complete, intraday_watermark_coverage_count = shared_load_1m_watermark_coverage(
             conn, scoped_symbols
         )
         if latest_intraday_bar_utc is None:
@@ -213,6 +185,20 @@ def main() -> int:
         latest_interp_utc = conn.execute("SELECT MAX(interpreted_at_utc) FROM news_interpretations").fetchone()[0]
         latest_macro_points_utc = conn.execute("SELECT MAX(ts_utc) FROM macro_points").fetchone()[0]
         latest_macro_as_of_utc = conn.execute("SELECT MAX(as_of_utc) FROM macro_points").fetchone()[0]
+        news_bucket_rows = load_news_bucket_health(
+            conn,
+            request_date_local=now_local.date(),
+            now_utc=now_utc,
+            max_age_sec=(
+                news_max_age_min_market * 60
+                if freshness_mode == "market_hours"
+                else (
+                    news_max_age_min_closed_calendar * 60
+                    if freshness_mode == "closed_calendar"
+                    else news_max_age_min_offhours * 60
+                )
+            ),
+        )
         pending_uninterpreted_24h = int(
             conn.execute(
                 """
@@ -267,6 +253,7 @@ def main() -> int:
             )
 
     # Pull recency is the correct heartbeat signal even when no new events are returned.
+    required_bucket_failures, optional_bucket_warnings, news_bucket_statuses = summarize_news_bucket_health(news_bucket_rows)
     if latest_news_pull_utc is None:
         checks.append(FreshnessCheck("news_pull_recency", "FAIL", "no news pull usage rows for local date"))
     else:
@@ -290,6 +277,7 @@ def main() -> int:
             if age_sec <= max_age_sec
             and success_news_pulls_today >= min_success
             and success_rate >= min_success_rate
+            and not required_bucket_failures
             else "FAIL"
         )
         checks.append(
@@ -300,10 +288,28 @@ def main() -> int:
                     f"age_sec={age_sec} max_age_sec={max_age_sec} market_hours={market_hours} "
                     f"freshness_mode={freshness_mode} market_session={market_session} "
                     f"success_pulls_today={success_news_pulls_today} total_pulls_today={total_news_pulls_today} "
-                    f"min_success={min_success} success_rate={success_rate:.3f} min_success_rate={min_success_rate:.3f}"
+                    f"min_success={min_success} success_rate={success_rate:.3f} min_success_rate={min_success_rate:.3f} "
+                    f"required_bucket_failures={required_bucket_failures} "
+                    f"optional_bucket_warnings={optional_bucket_warnings}"
                 ),
             )
         )
+
+    bucket_check_status = "PASS"
+    if required_bucket_failures:
+        bucket_check_status = "FAIL"
+    elif optional_bucket_warnings:
+        bucket_check_status = "WARN"
+    checks.append(
+        FreshnessCheck(
+            "news_bucket_health",
+            bucket_check_status,
+            (
+                f"required_bucket_failures={required_bucket_failures} "
+                f"optional_bucket_warnings={optional_bucket_warnings}"
+            ),
+        )
+    )
 
     # If no recent pending articles exist, interpretation staleness should not fail the run.
     if latest_interp_utc is None and pending_uninterpreted_24h > 0:
@@ -450,6 +456,9 @@ def main() -> int:
             "snapshot_status": snapshot_status,
             "latest_news_pull_utc": from_db_utc(latest_news_pull_utc).isoformat() if latest_news_pull_utc else None,
             "latest_interp_utc": from_db_utc(latest_interp_utc).isoformat() if latest_interp_utc else None,
+            "news_bucket_statuses": news_bucket_statuses,
+            "news_required_bucket_failures": required_bucket_failures,
+            "news_optional_bucket_warnings": optional_bucket_warnings,
             "latest_macro_points_utc": from_db_utc(latest_macro_points_utc).isoformat() if latest_macro_points_utc else None,
             "latest_macro_as_of_utc": from_db_utc(latest_macro_as_of_utc).isoformat() if latest_macro_as_of_utc else None,
             "success_news_pulls_today": success_news_pulls_today,

@@ -15,6 +15,7 @@ from tradly.services.time_context import get_time_context
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = REPO_ROOT / "data" / "runs"
 FRESHNESS_SNAPSHOT_PATH = REPO_ROOT / "data" / "journal" / "freshness_snapshot.json"
+CYCLE_RUNS_PATH = REPO_ROOT / "data" / "journal" / "cycle_runs.jsonl"
 CT_ZONE = ZoneInfo("America/Chicago")
 
 
@@ -71,6 +72,16 @@ def _fmt_session_date(value: Any) -> str:
         try:
             parsed_date = datetime.fromisoformat(value.strip()).date()
             return parsed_date.strftime("%a %b %-d")
+        except ValueError:
+            return value
+    return "UNSET"
+
+
+def _fmt_market_date(value: Any) -> str:
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed_date = datetime.fromisoformat(value.strip()).date()
+            return parsed_date.strftime("%a %Y-%m-%d")
         except ValueError:
             return value
     return "UNSET"
@@ -249,6 +260,23 @@ def _load_json_file(path: Path) -> dict:
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _load_latest_cycle_run(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    latest: dict = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            latest = payload
+    return latest
 
 
 def _latest_run_dir() -> Path | None:
@@ -498,6 +526,26 @@ def _render_status_card(label: str, value: str, note: str, detail: str | None = 
         </div>
         """,
         unsafe_allow_html=True,
+    )
+
+
+def _latest_cycle_failure_notice(freshness_snapshot: dict[str, Any], latest_cycle_run: dict[str, Any]) -> str | None:
+    if not isinstance(latest_cycle_run, dict) or not latest_cycle_run:
+        return None
+    latest_status = str(latest_cycle_run.get("status", "")).strip().upper()
+    if latest_status != "FAIL":
+        return None
+    cycle_started = _parse_dt(latest_cycle_run.get("started_at_utc"))
+    snapshot_written = _parse_dt(freshness_snapshot.get("written_at_utc"))
+    if cycle_started is None:
+        return None
+    if snapshot_written is not None and cycle_started <= snapshot_written:
+        return None
+    reason = str(latest_cycle_run.get("reason", "unknown")).strip() or "unknown"
+    return (
+        f"Latest refresh failed at {_fmt_ct_from_iso(latest_cycle_run.get('started_at_utc'))}. "
+        f"Showing last successful snapshot from {_fmt_ct_from_iso(freshness_snapshot.get('written_at_utc'))}. "
+        f"Reason: `{reason}`."
     )
 
 
@@ -776,6 +824,148 @@ def _render_action_board(review_payload: dict, market_payload: dict[str, Any] | 
         _render_action_list("Watch", watch_rows, market_payload)
 
 
+def _portfolio_rows(payload: dict) -> list[dict[str, Any]]:
+    rows = payload.get("rows", [])
+    if not isinstance(rows, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        out.append(
+            {
+                "Symbol": str(row.get("symbol", "UNSET")),
+                "Action": str(row.get("action_recommendation", "do_not_trade")),
+                "CurrentWt": float(row.get("current_weight", 0.0) or 0.0),
+                "TargetWt": float(row.get("target_weight", 0.0) or 0.0),
+                "DeltaWt": float(row.get("weight_delta", 0.0) or 0.0),
+                "Tier": str(row.get("idea_tier", "tier_blocked")),
+                "Theme": str(row.get("theme_id", "unknown")),
+                "Horizon": str(row.get("horizon_bucket", "unknown")),
+                "ExecState": str(row.get("action_execution_state", "informational")),
+                "Size": str(row.get("action_size_recommendation", "")),
+                "ReasonCodes": ", ".join(row.get("policy_reason_codes", [])),
+                "Blockers": ", ".join(row.get("policy_blockers", [])),
+                "Confidence": int(row.get("confidence_score", 0) or 0),
+            }
+        )
+    return sorted(
+        out,
+        key=lambda row: (
+            {"buy": 6, "add": 5, "trim": 4, "exit": 4, "hold": 3, "do_not_trade": 2}.get(str(row["Action"]), 1),
+            abs(float(row["DeltaWt"])),
+            int(row["Confidence"]),
+        ),
+        reverse=True,
+    )
+
+
+def _render_portfolio_policy(payload: dict) -> None:
+    if not payload:
+        st.warning("Portfolio policy artifact missing.")
+        return
+    rows = _portfolio_rows(payload)
+    if not rows:
+        st.warning("Portfolio policy rows missing.")
+        return
+
+    st.subheader("Portfolio Policy")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        _render_kpi("Portfolio Mode", str(payload.get("portfolio_mode", "UNSET")).replace("_", " ").title())
+    with c2:
+        _render_kpi("Current Gross Long", f"{float(payload.get('current_gross_long_exposure', 0.0) or 0.0) * 100:.1f}%")
+    with c3:
+        _render_kpi("Target Gross Long", f"{float(payload.get('target_gross_long_exposure', 0.0) or 0.0) * 100:.1f}%")
+    with c4:
+        _render_kpi("Available Cash", f"${float(payload.get('available_cash', 0.0) or 0.0):,.0f}")
+
+    reason_codes = payload.get("portfolio_mode_reason_codes", [])
+    if reason_codes:
+        st.caption(f"Mode reasons: {', '.join(str(code) for code in reason_codes)}")
+
+    violation_counts = payload.get("policy_violation_counts", {})
+    if isinstance(violation_counts, dict):
+        st.caption(
+            "Policy violations: "
+            f"single-name {violation_counts.get('single_name', 0)}, "
+            f"theme {violation_counts.get('theme', 0)}, "
+            f"horizon {violation_counts.get('horizon', 0)}, "
+            f"blocked rows {violation_counts.get('blocked_rows', 0)}"
+        )
+
+    buys = [row for row in rows if row["Action"] in {"buy", "add"}][:8]
+    risk = [row for row in rows if row["Action"] in {"trim", "exit"}][:8]
+
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**Top Buys / Adds**")
+        if buys:
+            st.dataframe(
+                [
+                    {
+                        "Symbol": row["Symbol"],
+                        "Action": row["Action"],
+                        "Tier": row["Tier"],
+                        "Current": f"{row['CurrentWt'] * 100:.1f}%",
+                        "Target": f"{row['TargetWt'] * 100:.1f}%",
+                        "Delta": f"{row['DeltaWt'] * 100:.1f}%",
+                        "Exec": row["ExecState"],
+                        "Size": row["Size"],
+                    }
+                    for row in buys
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.caption("No buy/add candidates.")
+    with right:
+        st.markdown("**Top Trims / Exits**")
+        if risk:
+            st.dataframe(
+                [
+                    {
+                        "Symbol": row["Symbol"],
+                        "Action": row["Action"],
+                        "Tier": row["Tier"],
+                        "Current": f"{row['CurrentWt'] * 100:.1f}%",
+                        "Target": f"{row['TargetWt'] * 100:.1f}%",
+                        "Delta": f"{row['DeltaWt'] * 100:.1f}%",
+                        "Exec": row["ExecState"],
+                        "Size": row["Size"],
+                    }
+                    for row in risk
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.caption("No trim/exit actions.")
+
+    st.markdown("**All Portfolio Actions**")
+    st.dataframe(
+        [
+            {
+                "Symbol": row["Symbol"],
+                "Action": row["Action"],
+                "Current Weight": f"{row['CurrentWt'] * 100:.1f}%",
+                "Target Weight": f"{row['TargetWt'] * 100:.1f}%",
+                "Delta": f"{row['DeltaWt'] * 100:.1f}%",
+                "Tier": row["Tier"],
+                "Theme": row["Theme"],
+                "Horizon": row["Horizon"],
+                "Execution": row["ExecState"],
+                "Reason Codes": row["ReasonCodes"],
+                "Blockers": row["Blockers"],
+            }
+            for row in rows
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
 def _render_horizon_landscape(ensemble_payload: dict, global_state: str) -> None:
     horizon_rows = _summarize_horizon_states(ensemble_payload, global_state)
     if not horizon_rows:
@@ -920,6 +1110,7 @@ def main() -> None:
     _render_theme()
     time_ctx = get_time_context()
     freshness_snapshot = _load_json_file(FRESHNESS_SNAPSHOT_PATH)
+    latest_cycle_run = _load_latest_cycle_run(CYCLE_RUNS_PATH)
     market_payload, _ = _load_latest_run_artifact("market_regime_v1.json")
     sector_payload, _ = _load_latest_run_artifact("sector_movement_v1.json")
     symbol_payload, _ = _load_latest_run_artifact("symbol_movement_v1.json")
@@ -929,6 +1120,7 @@ def main() -> None:
     ensemble_payload, _ = _load_latest_run_artifact("ensemble_v1.json")
     recommendation_payload, _ = _load_latest_run_artifact("recommendation_v1.json")
     review_payload, _ = _load_latest_run_artifact("recommendation_review_v1.json")
+    portfolio_payload, _ = _load_latest_run_artifact("portfolio_policy_v1.json")
 
     state, reasons, warnings = _compute_system_state(
         freshness_snapshot=freshness_snapshot,
@@ -945,6 +1137,9 @@ def main() -> None:
 
     st.title("tradly")
     st.markdown(f'<div class="tradly-now-line">Now { _fmt_now_ct(time_ctx.now_utc) }</div>', unsafe_allow_html=True)
+    latest_failure_notice = _latest_cycle_failure_notice(freshness_snapshot, latest_cycle_run)
+    if latest_failure_notice:
+        st.error(latest_failure_notice)
 
     freshness = freshness_snapshot.get("freshness", {}) if isinstance(freshness_snapshot, dict) else {}
     metrics = freshness.get("metrics", {}) if isinstance(freshness, dict) else {}
@@ -954,7 +1149,7 @@ def main() -> None:
         st.markdown('<div class="tradly-utility-box">', unsafe_allow_html=True)
         section = st.selectbox(
             "Navigate",
-            ["Decisions", "Market", "System"],
+            ["Decisions", "Portfolio", "Market", "System"],
             index=0,
             label_visibility="collapsed",
             key="top_nav",
@@ -969,7 +1164,7 @@ def main() -> None:
             _market_tape_caution(market_payload),
             (
                 f"{market_note}<br/>"
-                f"Daily: {_fmt_ct_from_iso(metrics.get('latest_daily_bar_utc'))}<br/>"
+                f"Daily market date: {_fmt_market_date(metrics.get('latest_daily_bar_market_date'))}<br/>"
                 f"Intraday: {_fmt_ct_from_iso(metrics.get('latest_intraday_bar_utc'))}"
             ),
         )
@@ -1001,6 +1196,8 @@ def main() -> None:
         _render_action_board(review_payload if review_payload else recommendation_payload, market_payload)
         if show_more_symbols:
             _render_symbol_stack(review_payload if review_payload else recommendation_payload)
+    elif section == "Portfolio":
+        _render_portfolio_policy(portfolio_payload)
     elif section == "Market":
         _render_market_context_compact(market_payload)
         _render_horizon_landscape(ensemble_payload, state)

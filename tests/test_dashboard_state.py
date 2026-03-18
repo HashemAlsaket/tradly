@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from dashboard.app import _compute_system_state
+from dashboard.app import _compute_system_state, _latest_cycle_failure_notice
 
 
 class DashboardStateTests(unittest.TestCase):
@@ -120,6 +120,32 @@ class DashboardStateTests(unittest.TestCase):
         self.assertEqual(state, "research_only")
         self.assertEqual(reasons, [])
         self.assertIn("recommendation_review_missing", warnings)
+
+    def test_latest_cycle_failure_notice_when_newer_failed_run_exists(self) -> None:
+        notice = _latest_cycle_failure_notice(
+            {"written_at_utc": "2026-03-17T03:55:03+00:00"},
+            {
+                "started_at_utc": "2026-03-17T16:33:39+00:00",
+                "status": "FAIL",
+                "reason": "preflight_catchup_failed",
+            },
+        )
+
+        self.assertIsNotNone(notice)
+        self.assertIn("Latest refresh failed", notice)
+        self.assertIn("preflight_catchup_failed", notice)
+
+    def test_latest_cycle_failure_notice_absent_when_snapshot_is_newer(self) -> None:
+        notice = _latest_cycle_failure_notice(
+            {"written_at_utc": "2026-03-17T16:40:00+00:00"},
+            {
+                "started_at_utc": "2026-03-17T16:33:39+00:00",
+                "status": "FAIL",
+                "reason": "preflight_catchup_failed",
+            },
+        )
+
+        self.assertIsNone(notice)
 
 
 if __name__ == "__main__":

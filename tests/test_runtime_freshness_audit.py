@@ -22,10 +22,10 @@ class RuntimeFreshnessAuditTests(unittest.TestCase):
 
     def test_market_hours_and_regular_offhours_modes(self) -> None:
         self.assertEqual(freshness_policy_for_session("market_hours"), "market_hours_strict")
-        self.assertEqual(freshness_policy_for_session("pre_market"), "premarket_strict")
+        self.assertEqual(freshness_policy_for_session("pre_market"), "premarket_tradable")
         self.assertEqual(freshness_policy_for_session("after_hours"), "after_hours_relaxed")
         self.assertEqual(freshness_mode_for_policy("market_hours_strict"), "market_hours")
-        self.assertEqual(freshness_mode_for_policy("premarket_strict"), "offhours")
+        self.assertEqual(freshness_mode_for_policy("premarket_tradable"), "offhours")
         self.assertEqual(freshness_mode_for_policy("after_hours_relaxed"), "offhours")
 
     def test_medium_horizon_thesis_usable_when_core_checks_pass(self) -> None:

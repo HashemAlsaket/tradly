@@ -317,6 +317,8 @@ def main() -> int:
         mode=backfill_mode,
         start_date=env_start_date,
         end_date=env_end_date,
+        validation_mode="incremental",
+        expected_market_dates=[],
         scoped_symbols=scoped_symbols,
         summary=summary,
         rows_to_upsert=rows_to_upsert,

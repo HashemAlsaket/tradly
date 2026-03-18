@@ -107,6 +107,8 @@ A healthy run means all of the following are true:
 1. [cycle_runs.jsonl](/Users/hashemalsaket/Desktop/workspace/tradly/data/journal/cycle_runs.jsonl)
 2. [freshness_snapshot.json](/Users/hashemalsaket/Desktop/workspace/tradly/data/journal/freshness_snapshot.json)
 3. [tradly.duckdb](/Users/hashemalsaket/Desktop/workspace/tradly/data/tradly.duckdb)
+4. [portfolio_snapshot_v1.json](/Users/hashemalsaket/Desktop/workspace/tradly/data/manual/portfolio_snapshot_v1.json)
+5. `data/runs/<date>/portfolio_policy_v1.json`
 
 ## Fast Operator Checklist
 
@@ -122,6 +124,48 @@ After a run:
    - `latest_macro_as_of_utc`
 4. if intraday session is active, confirm short-horizon readiness is true when expected
 5. confirm `freshness_policy` matches the current session expectation
+6. if portfolio policy is enabled, confirm:
+   - `portfolio_policy_v1.json` exists for the latest run
+   - `input_audit.status = ready`
+   - `portfolio_mode` is plausible for the current market state
+   - top `buy` / `add` / `trim` / `exit` rows are sensible
+
+## Portfolio Policy Input
+
+### Manual holdings snapshot
+
+The portfolio engine uses a manual holdings input at:
+
+- [portfolio_snapshot_v1.json](/Users/hashemalsaket/Desktop/workspace/tradly/data/manual/portfolio_snapshot_v1.json)
+
+Maintain it manually with:
+- current `as_of_utc`
+- current `cash_available`
+- current `net_liquidation_value`
+- current `positions`
+- current `open_orders`
+
+Do not let the pipeline mutate this file. It is an operator-maintained input.
+
+### Portfolio policy artifact
+
+The portfolio engine writes:
+
+- `data/runs/<date>/portfolio_policy_v1.json`
+
+This artifact is decision support only. It does not place orders.
+
+Expected checks:
+- `portfolio_mode`
+- `target_gross_long_exposure`
+- `current_gross_long_exposure`
+- `policy_violation_counts`
+- per-symbol `action_recommendation`
+- per-symbol `action_execution_state`
+
+Off-hours nuance:
+- after hours, non-hold actions may be intentionally marked `deferred_to_next_cash_session`
+- urgent exits may still appear as `exit`
 
 ## Failure Handling
 

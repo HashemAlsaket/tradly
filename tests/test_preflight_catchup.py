@@ -13,6 +13,7 @@ from tradly.ops.preflight_catchup import (
     _load_1m_watermark_max,
     _load_macro_refresh_state,
 )
+from tradly.services.market_watermarks import load_1m_watermark_coverage as shared_load_1m_watermark_coverage
 
 
 class PreflightCatchupTests(unittest.TestCase):
@@ -119,6 +120,17 @@ class PreflightCatchupTests(unittest.TestCase):
             ("stale", 1800),
         )
 
+    def test_intraday_source_stale_under_premarket_tradable_policy(self) -> None:
+        self.assertEqual(
+            _intraday_source_status(
+                latest_ts=datetime(2026, 3, 17, 20, 0),
+                now_utc=datetime(2026, 3, 18, 8, 1, tzinfo=timezone.utc),
+                freshness_policy="premarket_tradable",
+                max_age_sec=1200,
+            ),
+            ("stale", 43260),
+        )
+
     def test_load_1m_watermark_max_uses_oldest_symbol_watermark(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.duckdb"
@@ -179,6 +191,37 @@ class PreflightCatchupTests(unittest.TestCase):
             self.assertEqual(min_watermark, datetime(2026, 3, 16, 14, 31))
             self.assertFalse(coverage_complete)
             self.assertEqual(coverage_count, 1)
+
+    def test_shared_watermark_helper_matches_preflight_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            conn = duckdb.connect(str(db_path))
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE pipeline_watermarks (
+                      source_name TEXT NOT NULL,
+                      scope_key TEXT NOT NULL,
+                      watermark_ts_utc TIMESTAMP,
+                      watermark_meta_json TEXT,
+                      updated_at_utc TIMESTAMP NOT NULL,
+                      PRIMARY KEY (source_name, scope_key)
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO pipeline_watermarks VALUES
+                    ('market_bars_1m', 'AAPL', '2026-03-16 14:31:00', '{}', '2026-03-16 14:32:00'),
+                    ('market_bars_1m', 'MSFT', '2026-03-16 14:29:00', '{}', '2026-03-16 14:32:00')
+                    """
+                )
+                expected = _load_1m_watermark_coverage(conn, ["AAPL", "MSFT"])
+                actual = shared_load_1m_watermark_coverage(conn, ["AAPL", "MSFT"])
+            finally:
+                conn.close()
+
+            self.assertEqual(actual, expected)
 
 
 if __name__ == "__main__":

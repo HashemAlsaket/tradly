@@ -3,7 +3,7 @@ from __future__ import annotations
 
 def freshness_policy_for_session(market_session: str) -> str:
     if market_session == "pre_market":
-        return "premarket_strict"
+        return "premarket_tradable"
     if market_session == "market_hours":
         return "market_hours_strict"
     if market_session == "after_hours":
@@ -20,12 +20,12 @@ def freshness_mode_for_policy(policy: str) -> str:
 
 
 def policy_requires_intraday_strict(policy: str) -> bool:
-    return policy in {"premarket_strict", "market_hours_strict"}
+    return policy in {"market_hours_strict"}
 
 
 def policy_uses_intraday(policy: str) -> bool:
-    return policy in {"premarket_strict", "market_hours_strict", "after_hours_relaxed"}
+    return policy in {"premarket_tradable", "market_hours_strict", "after_hours_relaxed"}
 
 
 def policy_relaxes_intraday(policy: str) -> bool:
-    return policy == "after_hours_relaxed"
+    return policy in {"premarket_tradable", "after_hours_relaxed"}

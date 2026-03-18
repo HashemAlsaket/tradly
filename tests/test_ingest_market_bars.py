@@ -14,9 +14,13 @@ from tradly.pipeline.ingest_market_bars import (
     BACKFILL_MODE_CUTOVER,
     BACKFILL_MODE_VALIDATE,
     PROVIDER_SOURCE,
+    VALIDATION_MODE_BOOTSTRAP,
+    VALIDATION_MODE_INCREMENTAL,
     _build_daily_agg_url,
+    _expected_market_dates,
     _get_market_data_api_key,
     _get_backfill_mode,
+    _get_validation_mode,
     _normalize_daily_bar_row,
     _upsert_market_bars,
     _write_validation_artifact,
@@ -39,6 +43,26 @@ class TestIngestMarketBars(unittest.TestCase):
     def test_backfill_mode_accepts_cutover(self) -> None:
         with patch.dict(os.environ, {"TRADLY_MARKET_BACKFILL_MODE": "cutover"}, clear=True):
             self.assertEqual(_get_backfill_mode(), BACKFILL_MODE_CUTOVER)
+
+    def test_validation_mode_defaults_to_incremental_for_narrow_window(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                _get_validation_mode(start_date="2026-03-11", end_date="2026-03-16"),
+                VALIDATION_MODE_INCREMENTAL,
+            )
+
+    def test_validation_mode_defaults_to_bootstrap_for_wide_window(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                _get_validation_mode(start_date="2025-09-18", end_date="2026-03-17"),
+                VALIDATION_MODE_BOOTSTRAP,
+            )
+
+    def test_expected_market_dates_skips_weekends(self) -> None:
+        self.assertEqual(
+            _expected_market_dates("2026-03-11", "2026-03-16"),
+            ["2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16"],
+        )
 
     def test_build_daily_agg_url_uses_massive_host_and_daily_params(self) -> None:
         url = _build_daily_agg_url("AAPL", "secret", "2026-01-01", "2026-03-16")
@@ -179,6 +203,8 @@ class TestIngestMarketBars(unittest.TestCase):
                 mode=BACKFILL_MODE_VALIDATE,
                 start_date="2026-01-01",
                 end_date="2026-03-16",
+                validation_mode=VALIDATION_MODE_BOOTSTRAP,
+                expected_market_dates=["2026-03-13", "2026-03-16"],
                 scoped_symbols=["AAPL", "QQQ"],
                 summary=[("AAPL", 1, BACKFILL_DATA_STATUS)],
                 rows_to_upsert=rows,
@@ -190,6 +216,8 @@ class TestIngestMarketBars(unittest.TestCase):
             payload = __import__("json").loads(artifact_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["provider"], "massive")
             self.assertEqual(payload["mode"], "validate")
+            self.assertEqual(payload["validation_mode"], "bootstrap")
+            self.assertEqual(payload["expected_market_dates"], ["2026-03-13", "2026-03-16"])
             self.assertEqual(payload["scope_size"], 2)
             self.assertEqual(payload["prepared_row_count"], 1)
             self.assertFalse(payload["write_applied"])
