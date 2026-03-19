@@ -777,7 +777,8 @@ def _decision_rows(review_payload: dict) -> list[dict[str, Any]]:
                 "Sector": str(row.get("sector", "UNSET")),
                 "Action": str(row.get("recommended_action", "Unknown")),
                 "Horizon": str(row.get("recommended_horizon", "UNSET")),
-                "Confidence": int(row.get("confidence_score", 0) or 0),
+                "Confidence": int(row.get("display_confidence_score", row.get("confidence_score", 0)) or 0),
+                "RawConfidence": int(row.get("confidence_score", 0) or 0),
                 "Reason": _humanize_reason(str(row.get("primary_reason_code", ""))),
                 "ExecutionReady": bool(row.get("execution_ready", True)),
                 "RecommendationClass": str(row.get("recommendation_class", "unknown")),
@@ -796,7 +797,7 @@ def _decision_rows(review_payload: dict) -> list[dict[str, Any]]:
         key=lambda row: (
             {"promote": 3, "review_required": 2, "watch": 1, "defer": 0, "blocked": -1}.get(str(row["ReviewDisposition"]), -1),
             action_priority(str(row["Action"])),
-            int(row["Confidence"]),
+            int(row["RawConfidence"]),
         ),
         reverse=True,
     )
@@ -821,18 +822,12 @@ def _render_action_list(title: str, rows: list[dict[str, Any]], market_payload: 
         return
     if title:
         st.markdown(f'<div class="tradly-section-subtle">{len(rows)} shown</div>', unsafe_allow_html=True)
-    market_stress = _market_stress_level(market_payload)
 
     def _render_rows(group_rows: list[dict[str, Any]]) -> None:
         for row in group_rows:
             symbol = str(row["Symbol"])
             horizon = str(row["Horizon"])
             confidence = int(row["Confidence"])
-            if section_class == "buy":
-                if market_stress == "high":
-                    confidence = max(confidence - 6, 0)
-                elif market_stress == "medium":
-                    confidence = max(confidence - 3, 0)
             reason = str(row.get("ReviewReasonText") or row["Reason"]).strip()
             execution_ready = bool(row.get("ExecutionReady", True))
             horizon_label = _format_horizon_label(horizon)

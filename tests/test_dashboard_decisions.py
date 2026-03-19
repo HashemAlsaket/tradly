@@ -48,6 +48,7 @@ class DashboardDecisionTests(unittest.TestCase):
                         "recommended_action": "Buy",
                         "recommended_horizon": "1to2w",
                         "confidence_score": 70,
+                        "display_confidence_score": 66,
                         "primary_reason_code": "market_context_headwind",
                         "execution_ready": True,
                         "recommendation_class": "contrarian_long",
@@ -65,7 +66,8 @@ class DashboardDecisionTests(unittest.TestCase):
         self.assertEqual(rows[0]["Symbol"], "NVDA")
         self.assertEqual(rows[0]["Action"], "Buy")
         self.assertEqual(rows[0]["Horizon"], "1to2w")
-        self.assertEqual(rows[0]["Confidence"], 70)
+        self.assertEqual(rows[0]["Confidence"], 66)
+        self.assertEqual(rows[0]["RawConfidence"], 70)
         self.assertEqual(rows[0]["ReviewDisposition"], "review_required")
         self.assertEqual(rows[0]["Sector"], "Technology")
         self.assertEqual(rows[0]["ReviewState"], "Contrarian Rebound")

@@ -92,6 +92,8 @@ class RecommendationReviewTests(unittest.TestCase):
         )
         self.assertEqual(rows[0]["review_disposition"], "promote")
         self.assertEqual(rows[0]["review_reason_code"], "mixed_cautious_actionable")
+        self.assertGreaterEqual(rows[0]["display_confidence_score"], 64)
+        self.assertLessEqual(rows[0]["display_confidence_score"], 72)
 
     def test_build_review_rows_promotes_mixed_strong_high_confidence_long(self) -> None:
         rows = build_review_rows(
@@ -136,6 +138,59 @@ class RecommendationReviewTests(unittest.TestCase):
         )
         self.assertEqual(rows[0]["review_disposition"], "defer")
         self.assertEqual(rows[0]["review_reason_code"], "intraday_freshness_not_ready")
+        self.assertLess(rows[0]["display_confidence_score"], rows[0]["confidence_score"])
+
+    def test_build_review_rows_display_confidence_is_state_aware(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "NVDA",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "2to6w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 78,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                },
+                {
+                    "scope_id": "MU",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "mixed_weak_long",
+                    "evidence_balance_class": "mixed_weak",
+                    "regime_alignment": "mixed",
+                    "signal_direction": "bullish",
+                    "confidence_score": 73,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                },
+                {
+                    "scope_id": "NKE",
+                    "recommended_action": "Sell/Trim",
+                    "recommended_horizon": "1to3d",
+                    "recommendation_class": "aligned_short",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bearish",
+                    "confidence_score": 85,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                },
+            ],
+            now_utc=datetime(2026, 3, 19, 16, 0, 0),
+            symbol_metadata={"MU": {"sector": "Technology", "industry": "Semiconductors", "direct_news": True}},
+            event_risk_rows_by_symbol={"MU": {"event_active": True, "hard_cap_buy_to_watch": True, "reaction_state": "beat_but_rejected", "reaction_severity": "medium"}},
+        )
+        by_scope = {row["scope_id"]: row for row in rows}
+        self.assertEqual(by_scope["NVDA"]["review_disposition"], "promote")
+        self.assertEqual(by_scope["NKE"]["review_disposition"], "promote")
+        self.assertEqual(by_scope["MU"]["review_disposition"], "watch")
+        self.assertLess(by_scope["MU"]["display_confidence_score"], by_scope["NVDA"]["display_confidence_score"])
+        self.assertLess(by_scope["MU"]["display_confidence_score"], by_scope["NKE"]["display_confidence_score"])
+        self.assertLessEqual(by_scope["NKE"]["display_confidence_score"], 74)
 
     def test_healthcare_direct_news_thin_evidence_downgrades_promote(self) -> None:
         rows = build_review_rows(

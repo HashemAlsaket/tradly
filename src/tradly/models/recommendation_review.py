@@ -142,6 +142,47 @@ def _review_bucket(row: dict[str, Any], disposition: str, reason_code: str) -> s
     return "watch_needs_confirmation"
 
 
+def _display_confidence_score(
+    *,
+    raw_confidence: int,
+    disposition: str,
+    review_bucket: str,
+    reason_code: str,
+    recommended_action: str,
+) -> int:
+    raw = max(0, min(int(raw_confidence or 0), 100))
+    normalized = max(0.0, min((raw - 50) / 35.0, 1.0))
+
+    def _band(low: int, high: int) -> int:
+        if high <= low:
+            return low
+        return int(round(low + (high - low) * normalized))
+
+    if disposition == "promote":
+        if review_bucket == "top_longs":
+            return _band(64, 72)
+        if review_bucket == "top_shorts":
+            return _band(66, 74)
+        return _band(62, 70)
+    if disposition == "review_required":
+        if review_bucket == "review_high_priority":
+            return _band(56, 64)
+        return _band(50, 58)
+    if disposition == "defer":
+        return _band(48, 56) if recommended_action in {"Buy", "Sell/Trim"} else _band(44, 52)
+    if disposition == "blocked":
+        return _band(18, 30)
+    if review_bucket == "watch_event_damaged" or reason_code in {
+        "event_buy_capped_to_watch",
+        "event_reaction_damage",
+        "event_reaction_caution",
+    }:
+        return _band(50, 58)
+    if review_bucket == "watch_tape_blocked":
+        return _band(56, 64)
+    return _band(52, 60)
+
+
 def build_review_rows(
     *,
     recommendation_rows: list[dict[str, Any]],
@@ -309,6 +350,14 @@ def build_review_rows(
                     reason_code = "market_stress_watch"
 
         review_bucket = _review_bucket(row, disposition, reason_code)
+        raw_confidence = int(row.get("confidence_score", 0) or 0)
+        display_confidence = _display_confidence_score(
+            raw_confidence=raw_confidence,
+            disposition=disposition,
+            review_bucket=review_bucket,
+            reason_code=reason_code,
+            recommended_action=str(row.get("recommended_action", "")).strip(),
+        )
         rows.append(
             {
                 "model_id": "recommendation_review_v1",
@@ -320,7 +369,8 @@ def build_review_rows(
                 "evidence_balance_class": row.get("evidence_balance_class"),
                 "regime_alignment": row.get("regime_alignment"),
                 "signal_direction": row.get("signal_direction"),
-                "confidence_score": row.get("confidence_score"),
+                "confidence_score": raw_confidence,
+                "display_confidence_score": display_confidence,
                 "execution_ready": row.get("execution_ready"),
                 "source_state": row.get("source_state"),
                 "review_disposition": disposition,
