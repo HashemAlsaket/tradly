@@ -5,15 +5,22 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+from tradly.services.universe_registry import normalize_registry_row
+
 
 BUCKET_ORDER = [
     "core_semis",
+    "healthcare_core",
     "us_macro",
     "asia_semis",
     "asia_macro",
     "sector_context",
     "event_reserve",
 ]
+
+DEFAULT_BUCKET_CAPS = {
+    "healthcare_core": 300,
+}
 
 
 def _repo_root() -> Path:
@@ -85,6 +92,7 @@ def _build_scope_manifest(symbols: list[dict], bucket_map: dict[str, list[str]])
             "market_data_symbols": sum(1 for row in symbols if bool(row.get("market_data"))),
             "model_symbols": sum(1 for row in symbols if bool(row.get("model"))),
             "direct_news_symbols": sum(1 for row in symbols if bool(row.get("direct_news"))),
+            "portfolio_eligible_symbols": sum(1 for row in symbols if bool(row.get("portfolio_eligible"))),
         },
         "scopes": {
             "all_symbols": all_symbols,
@@ -92,10 +100,19 @@ def _build_scope_manifest(symbols: list[dict], bucket_map: dict[str, list[str]])
             "market_data_symbols": _sorted_where("market_data"),
             "model_symbols": _sorted_where("model"),
             "direct_news_symbols": _sorted_where("direct_news"),
+            "portfolio_eligible_symbols": _sorted_where("portfolio_eligible"),
         },
         "groupings": {
             "by_sector": {sector: sorted(values) for sector, values in sorted(by_sector.items())},
             "by_role": {role: sorted(values) for role, values in sorted(by_role.items())},
+            "by_onboarding_stage": {
+                stage: sorted(
+                    str(row["symbol"]).strip().upper()
+                    for row in symbols
+                    if str(row.get("onboarding_stage", "")).strip() == stage
+                )
+                for stage in sorted({str(row.get("onboarding_stage", "")).strip() for row in symbols if str(row.get("onboarding_stage", "")).strip()})
+            },
             "news_buckets": bucket_map,
         },
     }
@@ -114,7 +131,7 @@ def _write_watchlists(path: Path, template_path: Path, symbols: list[dict]) -> N
             ordered_caps[bucket] = int(bucket_caps[bucket])
     for bucket in buckets:
         if bucket not in ordered_caps:
-            ordered_caps[bucket] = int(bucket_caps.get(bucket, 0))
+            ordered_caps[bucket] = int(bucket_caps.get(bucket, DEFAULT_BUCKET_CAPS.get(bucket, 0)))
 
     payload = {
         "lookback_days": int(template.get("lookback_days", 90)),
@@ -147,7 +164,7 @@ def main() -> int:
         print(f"watchlist_missing={watchlist_path}")
         return 2
 
-    symbols = sorted(_load_registry(registry_path), key=lambda row: row["symbol"])
+    symbols = sorted((normalize_registry_row(row) for row in _load_registry(registry_path)), key=lambda row: row["symbol"])
     _write_universe_csv(csv_path, symbols)
     bucket_map = _build_bucket_map(symbols)
     _write_watchlists(watchlist_path, watchlist_path, symbols)

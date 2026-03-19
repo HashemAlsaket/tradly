@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import unittest
 
 from dashboard.app import _portfolio_rows
-from tradly.models.portfolio_policy import build_portfolio_policy, validate_portfolio_snapshot
+from tradly.models.portfolio_policy import _theme_from_symbol_meta, build_portfolio_policy, validate_portfolio_snapshot
 
 
 def _market_payload(*, macro_state: str = "macro_unstable", signal_direction: str = "bearish", confidence: int = 80) -> dict:
@@ -199,6 +199,20 @@ def _review_payload() -> dict:
 
 
 class PortfolioPolicyTests(unittest.TestCase):
+    def test_healthcare_is_first_class_theme_not_generic_defensive(self) -> None:
+        self.assertEqual(
+            _theme_from_symbol_meta(
+                {
+                    "asset_type": "stock",
+                    "sector": "Healthcare",
+                    "industry": "Drug Manufacturers - General",
+                    "roles": ["core_leader", "pharma_defensive"],
+                },
+                "JNJ",
+            ),
+            "healthcare",
+        )
+
     def test_snapshot_validation_flags_invalid_nav_and_unmanaged(self) -> None:
         validation = validate_portfolio_snapshot(
             {

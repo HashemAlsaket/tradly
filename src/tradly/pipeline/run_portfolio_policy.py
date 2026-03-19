@@ -9,6 +9,7 @@ from tradly.models.portfolio_policy import build_portfolio_policy
 from tradly.paths import get_repo_root
 from tradly.services.artifact_alignment import assess_artifact_alignment
 from tradly.services.time_context import get_time_context
+from tradly.services.universe_registry import load_normalized_registry
 
 
 MAX_UPSTREAM_AGE = timedelta(hours=6)
@@ -42,7 +43,10 @@ def main() -> int:
     review_payload = _load_latest_json(runs_dir, "*/recommendation_review_v1.json")
     freshness_snapshot = _load_json_file(repo_root / "data" / "journal" / "freshness_snapshot.json")
     portfolio_snapshot = _load_json_file(manual_dir / "portfolio_snapshot_v1.json")
-    universe_registry = _load_json_file(manual_dir / "universe_registry.json")
+    try:
+        universe_registry = load_normalized_registry(manual_dir / "universe_registry.json")
+    except Exception:
+        universe_registry = {}
 
     if not market_payload:
         print("portfolio_policy_v1_failed:market_regime_missing")

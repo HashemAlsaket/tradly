@@ -30,6 +30,7 @@ STEPS = [
     ("run_recommendation_scorecard_history", "tradly.pipeline.run_recommendation_scorecard_history"),
     ("run_recommendation_review", "tradly.pipeline.run_recommendation_review"),
     ("run_portfolio_policy", "tradly.pipeline.run_portfolio_policy"),
+    ("run_universe_onboarding_audit", "tradly.pipeline.run_universe_onboarding_audit"),
 ]
 
 

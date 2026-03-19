@@ -130,6 +130,11 @@ def _call_openai(model: str, api_key: str, batch_articles: list[dict]) -> dict:
         "   Weekend or holiday timing does not mean the data is stale; it means the cash market is closed.\n"
         "9. On weekends or market holidays, avoid overusing very short-horizon calls unless the article is clearly about the next trading session.\n"
         "   Medium and position horizons may still be appropriate when the thesis is durable.\n"
+        "10. For healthcare articles, classify the impact using healthcare-aware thesis tags when applicable.\n"
+        "    Prefer concise tags such as `trial_readout`, `drug_approval`, `regulatory`, `pricing_reimbursement`,\n"
+        "    `utilization_cost_pressure`, `devices_tools_demand`, `patent_litigation`, `defensive_earnings_resilience`.\n"
+        "11. When a healthcare article is mainly about large-cap pharma or managed care, keep the impact scope as\n"
+        "    `healthcare` or `symbol_specific` rather than forcing it into broad market or macro buckets.\n"
         'Return as: {"interpretations":[...]}.\n'
         f"Articles:\n{json.dumps(batch_articles, ensure_ascii=True)}"
     )

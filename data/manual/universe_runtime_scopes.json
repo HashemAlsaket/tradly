@@ -1,11 +1,12 @@
 {
   "version": 1,
   "summary": {
-    "all_symbols": 116,
-    "active_symbols": 44,
-    "market_data_symbols": 70,
-    "model_symbols": 44,
-    "direct_news_symbols": 43
+    "all_symbols": 118,
+    "active_symbols": 49,
+    "market_data_symbols": 77,
+    "model_symbols": 49,
+    "direct_news_symbols": 46,
+    "portfolio_eligible_symbols": 7
   },
   "scopes": {
     "all_symbols": [
@@ -32,6 +33,7 @@
       "COST",
       "CRM",
       "CSCO",
+      "CVS",
       "CVX",
       "DE",
       "DHR",
@@ -46,6 +48,7 @@
       "FCX",
       "FXI",
       "GE",
+      "GILD",
       "GLD",
       "GOOGL",
       "GS",
@@ -139,18 +142,22 @@
       "CRM",
       "CSCO",
       "CVX",
+      "DHR",
       "DIA",
       "DIS",
       "GOOGL",
       "GS",
       "INTC",
+      "ISRG",
       "IWM",
+      "JNJ",
       "JPM",
       "KO",
       "LLY",
       "MA",
       "MCD",
       "META",
+      "MRK",
       "MS",
       "MSFT",
       "MU",
@@ -165,6 +172,7 @@
       "QQQ",
       "SNDK",
       "SPY",
+      "TMO",
       "TSLA",
       "UNH",
       "V",
@@ -195,20 +203,26 @@
       "COST",
       "CRM",
       "CSCO",
+      "CVS",
       "CVX",
+      "DHR",
       "DIA",
       "DIS",
+      "GILD",
       "GOOGL",
       "GS",
       "IEF",
       "INTC",
+      "ISRG",
       "IWM",
+      "JNJ",
       "JPM",
       "KO",
       "LLY",
       "MA",
       "MCD",
       "META",
+      "MRK",
       "MS",
       "MSFT",
       "MU",
@@ -225,6 +239,7 @@
       "SNDK",
       "SPY",
       "TLT",
+      "TMO",
       "TSLA",
       "UNH",
       "V",
@@ -257,18 +272,22 @@
       "CRM",
       "CSCO",
       "CVX",
+      "DHR",
       "DIA",
       "DIS",
       "GOOGL",
       "GS",
       "INTC",
+      "ISRG",
       "IWM",
+      "JNJ",
       "JPM",
       "KO",
       "LLY",
       "MA",
       "MCD",
       "META",
+      "MRK",
       "MS",
       "MSFT",
       "MU",
@@ -283,6 +302,7 @@
       "QQQ",
       "SNDK",
       "SPY",
+      "TMO",
       "TSLA",
       "UNH",
       "V",
@@ -304,10 +324,13 @@
       "GLD",
       "IEF",
       "INTC",
+      "JNJ",
       "KLAC",
       "KRE",
       "KWEB",
+      "LLY",
       "LRCX",
+      "MRK",
       "MU",
       "NVDA",
       "NVTS",
@@ -319,6 +342,7 @@
       "SPY",
       "TLT",
       "TSM",
+      "UNH",
       "USO",
       "UUP",
       "VIXY",
@@ -331,9 +355,17 @@
       "XLP",
       "XLRE",
       "XLU",
-      "XLV",
       "XLY",
       "XSD"
+    ],
+    "portfolio_eligible_symbols": [
+      "DHR",
+      "ISRG",
+      "JNJ",
+      "LLY",
+      "MRK",
+      "TMO",
+      "UNH"
     ]
   },
   "groupings": {
@@ -416,7 +448,9 @@
       ],
       "Healthcare": [
         "ABBV",
+        "CVS",
         "DHR",
+        "GILD",
         "ISRG",
         "JNJ",
         "LLY",
@@ -502,6 +536,11 @@
         "NVTS",
         "SNDK"
       ],
+      "core_leader": [
+        "JNJ",
+        "LLY",
+        "UNH"
+      ],
       "earnings_focus": [
         "MU",
         "NVDA",
@@ -523,6 +562,25 @@
         "UUP",
         "VIXY",
         "VTI"
+      ],
+      "managed_care_retail_health": [
+        "CVS",
+        "UNH"
+      ],
+      "pharma_defensive": [
+        "GILD",
+        "JNJ",
+        "LLY",
+        "MRK"
+      ],
+      "probationary_market_data_only": [
+        "CVS",
+        "GILD"
+      ],
+      "quality_tools_devices": [
+        "DHR",
+        "ISRG",
+        "TMO"
       ],
       "sector_context": [
         "KRE",
@@ -560,6 +618,7 @@
         "COST",
         "CRM",
         "CSCO",
+        "CVS",
         "CVX",
         "DE",
         "DHR",
@@ -570,6 +629,7 @@
         "EXC",
         "FCX",
         "GE",
+        "GILD",
         "GOOGL",
         "GS",
         "HON",
@@ -619,6 +679,9 @@
         "WMT",
         "XOM"
       ],
+      "sector_proxy": [
+        "XLV"
+      ],
       "semis": [
         "ADI",
         "AMAT",
@@ -636,6 +699,24 @@
         "TSM"
       ]
     },
+    "by_onboarding_stage": {
+      "market_data_only": [
+        "CVS",
+        "GILD",
+        "XLV"
+      ],
+      "modeled": [
+        "DHR",
+        "ISRG",
+        "TMO"
+      ],
+      "modeled_with_direct_news": [
+        "JNJ",
+        "LLY",
+        "MRK",
+        "UNH"
+      ]
+    },
     "news_buckets": {
       "core_semis": [
         "AMAT",
@@ -650,6 +731,12 @@
         "NVTS",
         "SNDK",
         "TSM"
+      ],
+      "healthcare_core": [
+        "JNJ",
+        "LLY",
+        "MRK",
+        "UNH"
       ],
       "us_macro": [
         "ARKK",
@@ -692,7 +779,6 @@
         "XLP",
         "XLRE",
         "XLU",
-        "XLV",
         "XLY",
         "XSD"
       ],

@@ -22,6 +22,7 @@ DEFAULT_MIN_SYMBOL_RELEVANCE = 15.0
 NEWS_WATERMARK_SOURCE = "news_events_marketaux_bucket"
 REQUIRED_BUCKETS = (
     "core_semis",
+    "healthcare_core",
     "us_macro",
     "asia_semis",
     "asia_macro",

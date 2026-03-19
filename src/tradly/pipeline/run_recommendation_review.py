@@ -13,6 +13,7 @@ from tradly.services.market_calendar import market_session_state
 from tradly.services.market_watermarks import load_1m_watermark_coverage
 from tradly.services.session_freshness_policy import freshness_policy_for_session, policy_uses_intraday
 from tradly.services.time_context import get_time_context
+from tradly.services.universe_registry import load_normalized_registry
 from tradly.pipeline.ingest_market_bars import _load_market_data_symbols
 
 MAX_UPSTREAM_AGE = timedelta(hours=6)
@@ -24,6 +25,16 @@ def _load_latest_json(runs_dir: Path, pattern: str) -> dict:
         return {}
     try:
         payload = json.loads(candidates[-1].read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _load_json_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
@@ -142,10 +153,27 @@ def main() -> int:
         return 3
 
     intraday_actionable, intraday_summary = _intraday_actionable(repo_root=repo_root, now_utc=time_ctx.now_utc)
+    try:
+        universe_registry = load_normalized_registry(repo_root / "data" / "manual" / "universe_registry.json")
+    except Exception:
+        universe_registry = {}
+    symbol_news_payload = _load_latest_json(runs_dir, "*/symbol_news_v1.json")
+    symbol_metadata = {
+        str(item.get("symbol", "")).strip().upper(): item
+        for item in universe_registry.get("symbols", [])
+        if isinstance(item, dict) and str(item.get("symbol", "")).strip()
+    }
+    symbol_news_rows_by_symbol = {
+        str(row.get("scope_id", "")).strip().upper(): row
+        for row in symbol_news_payload.get("rows", [])
+        if isinstance(row, dict) and str(row.get("scope_id", "")).strip()
+    }
     rows = build_review_rows(
         recommendation_rows=recommendation_rows,
         now_utc=time_ctx.now_utc,
         intraday_actionable=intraday_actionable,
+        symbol_metadata=symbol_metadata,
+        symbol_news_rows_by_symbol=symbol_news_rows_by_symbol,
     )
     quality_audit = _quality_audit(rows)
     counts: dict[str, int] = {}

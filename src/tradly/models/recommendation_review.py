@@ -8,6 +8,18 @@ PROMOTE_CONFIDENCE_MIN = 60
 MIXED_STRONG_PROMOTE_CONFIDENCE_MIN = 72
 
 
+def _healthcare_subtype(metadata: dict[str, Any]) -> str:
+    roles = {str(role).strip().lower() for role in metadata.get("roles", []) if str(role).strip()}
+    industry = str(metadata.get("industry", "")).strip().lower()
+    if "managed_care_retail_health" in roles or "healthcare plan" in industry or "pharmacy" in industry:
+        return "managed_care_retail_health"
+    if "quality_tools_devices" in roles or "device" in industry or "diagnostics" in industry or "instrument" in industry:
+        return "quality_tools_devices"
+    if "pharma_defensive" in roles or "drug manufacturers" in industry or "biotech" in industry:
+        return "pharma_defensive"
+    return "general_healthcare"
+
+
 def _review_disposition(row: dict[str, Any], *, intraday_actionable: bool) -> tuple[str, str]:
     action = str(row.get("recommended_action", "")).strip()
     recommended_horizon = str(row.get("recommended_horizon", "")).strip()
@@ -58,8 +70,12 @@ def build_review_rows(
     recommendation_rows: list[dict[str, Any]],
     now_utc: datetime,
     intraday_actionable: bool = True,
+    symbol_metadata: dict[str, dict[str, Any]] | None = None,
+    symbol_news_rows_by_symbol: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    symbol_metadata = symbol_metadata or {}
+    symbol_news_rows_by_symbol = symbol_news_rows_by_symbol or {}
     for row in recommendation_rows:
         if not isinstance(row, dict):
             continue
@@ -67,6 +83,33 @@ def build_review_rows(
         if not scope_id:
             continue
         disposition, reason_code = _review_disposition(row, intraday_actionable=intraday_actionable)
+        metadata = symbol_metadata.get(scope_id, {})
+        symbol_news_row = symbol_news_rows_by_symbol.get(scope_id, {})
+        sector = str(metadata.get("sector", "")).strip()
+        direct_news = bool(metadata.get("direct_news", False))
+        onboarding_stage = str(metadata.get("onboarding_stage", "")).strip()
+        symbol_news_coverage = str(symbol_news_row.get("coverage_state", "")).strip().lower()
+        healthcare_subtype = ""
+
+        if sector == "Healthcare":
+            healthcare_subtype = _healthcare_subtype(metadata)
+            if direct_news and symbol_news_coverage in {"thin_evidence", "insufficient_evidence"}:
+                if disposition == "promote":
+                    disposition = "review_required"
+                if reason_code in {"regime_aligned_actionable", "mixed_strong_actionable"}:
+                    reason_code = "healthcare_thin_evidence"
+            elif disposition == "promote":
+                if healthcare_subtype == "pharma_defensive":
+                    reason_code = "healthcare_pharma_actionable"
+                elif healthcare_subtype == "quality_tools_devices":
+                    reason_code = "healthcare_tools_devices_actionable"
+                elif healthcare_subtype == "managed_care_retail_health":
+                    reason_code = "healthcare_managed_care_actionable"
+                else:
+                    reason_code = "healthcare_actionable"
+            elif disposition == "review_required" and onboarding_stage == "modeled":
+                reason_code = "healthcare_probationary_modeled"
+
         review_bucket = _review_bucket(row, disposition)
         rows.append(
             {
@@ -84,6 +127,8 @@ def build_review_rows(
                 "review_disposition": disposition,
                 "review_bucket": review_bucket,
                 "review_reason_code": reason_code,
+                "sector": sector,
+                "sector_subtype": healthcare_subtype,
                 "primary_reason_code": row.get("primary_reason_code"),
                 "why_code": row.get("why_code", []),
                 "as_of_utc": now_utc.isoformat(),

@@ -9,7 +9,8 @@
     "asia_semis": 300,
     "asia_macro": 200,
     "sector_context": 200,
-    "event_reserve": 100
+    "event_reserve": 100,
+    "healthcare_core": 300
   },
   "max_pages_per_bucket": 300,
   "buckets": {
@@ -26,6 +27,12 @@
       "NVTS",
       "SNDK",
       "TSM"
+    ],
+    "healthcare_core": [
+      "JNJ",
+      "LLY",
+      "MRK",
+      "UNH"
     ],
     "us_macro": [
       "ARKK",
@@ -68,7 +75,6 @@
       "XLP",
       "XLRE",
       "XLU",
-      "XLV",
       "XLY",
       "XSD"
     ],

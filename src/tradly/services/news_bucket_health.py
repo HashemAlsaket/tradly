@@ -11,6 +11,7 @@ REQUIRED_NEWS_BUCKETS = (
     "event_reserve",
 )
 OPTIONAL_NEWS_BUCKETS = (
+    "healthcare_core",
     "asia_semis",
     "asia_macro",
 )

@@ -381,6 +381,25 @@
       "news_buckets": []
     },
     {
+      "symbol": "CVS",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
+      "sector": "Healthcare",
+      "industry": "Pharmacy & Drug Stores",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader",
+        "managed_care_retail_health",
+        "probationary_market_data_only"
+      ],
+      "news_buckets": []
+    },
+    {
       "symbol": "DE",
       "asset_type": "stock",
       "active": false,
@@ -398,15 +417,18 @@
     {
       "symbol": "DHR",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "direct_news": false,
       "sector": "Healthcare",
       "industry": "Diagnostics & Research",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "quality_tools_devices"
       ],
       "news_buckets": []
     },
@@ -583,6 +605,25 @@
       "news_buckets": []
     },
     {
+      "symbol": "GILD",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
+      "sector": "Healthcare",
+      "industry": "Drug Manufacturers - General",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader",
+        "pharma_defensive",
+        "probationary_market_data_only"
+      ],
+      "news_buckets": []
+    },
+    {
       "symbol": "GLD",
       "asset_type": "etf",
       "active": false,
@@ -697,15 +738,18 @@
     {
       "symbol": "ISRG",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "direct_news": false,
       "sector": "Healthcare",
       "industry": "Medical Instruments & Supplies",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "quality_tools_devices"
       ],
       "news_buckets": []
     },
@@ -728,17 +772,23 @@
     {
       "symbol": "JNJ",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
-      "direct_news": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Healthcare",
       "industry": "Drug Manufacturers - General",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "pharma_defensive"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "healthcare_core"
+      ]
     },
     {
       "symbol": "JPM",
@@ -843,14 +893,20 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Healthcare",
       "industry": "Drug Manufacturers - General",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "pharma_defensive"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "healthcare_core"
+      ]
     },
     {
       "symbol": "LMT",
@@ -948,17 +1004,22 @@
     {
       "symbol": "MRK",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
-      "direct_news": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Healthcare",
       "industry": "Drug Manufacturers - General",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "pharma_defensive"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "healthcare_core"
+      ]
     },
     {
       "symbol": "MS",
@@ -1434,15 +1495,18 @@
     {
       "symbol": "TMO",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "direct_news": false,
       "sector": "Healthcare",
       "industry": "Diagnostics & Research",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "quality_tools_devices"
       ],
       "news_buckets": []
     },
@@ -1501,14 +1565,20 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Healthcare",
       "industry": "Healthcare Plans",
       "halal_flag": "review_required",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "managed_care_retail_health"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "healthcare_core"
+      ]
     },
     {
       "symbol": "UNP",
@@ -1799,11 +1869,14 @@
       "market_data": true,
       "model": false,
       "direct_news": true,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "ETF",
       "industry": "Healthcare ETF",
       "halal_flag": "investable",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"

@@ -174,7 +174,7 @@ MODEL_REGISTRY: dict[str, ModelRegistryEntry] = {
     "recommendation_review_v1": _entry(
         model_id="recommendation_review_v1",
         scope="symbol",
-        required_inputs=("recommendation_v1",),
+        required_inputs=("recommendation_v1", "symbol_news_v1", "universe_registry"),
         supported_horizons=("1to3d", "1to2w", "2to6w"),
         directional_role="supporting",
         ensemble_inclusion=False,

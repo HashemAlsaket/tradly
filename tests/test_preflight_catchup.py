@@ -11,6 +11,8 @@ from tradly.ops.preflight_catchup import (
     _intraday_source_status,
     _load_1m_watermark_coverage,
     _load_1m_watermark_max,
+    _load_missing_daily_symbols,
+    _load_missing_snapshot_symbols,
     _load_macro_refresh_state,
 )
 from tradly.services.market_watermarks import load_1m_watermark_coverage as shared_load_1m_watermark_coverage
@@ -222,6 +224,57 @@ class PreflightCatchupTests(unittest.TestCase):
                 conn.close()
 
             self.assertEqual(actual, expected)
+
+    def test_load_missing_daily_symbols_flags_new_scope_symbol_without_daily_row(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            conn = duckdb.connect(str(db_path))
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE market_bars (
+                      symbol TEXT,
+                      ts_utc TIMESTAMP,
+                      timeframe TEXT
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO market_bars VALUES
+                    ('JNJ', '2026-03-17 04:00:00', '1d')
+                    """
+                )
+                missing = _load_missing_daily_symbols(conn, ["JNJ", "MRK"], datetime(2026, 3, 17, tzinfo=timezone.utc).date())
+            finally:
+                conn.close()
+
+        self.assertEqual(missing, ["MRK"])
+
+    def test_load_missing_snapshot_symbols_flags_new_scope_symbol_without_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            conn = duckdb.connect(str(db_path))
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE market_snapshots (
+                      symbol TEXT,
+                      as_of_utc TIMESTAMP
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO market_snapshots VALUES
+                    ('JNJ', '2026-03-18 15:00:00')
+                    """
+                )
+                missing = _load_missing_snapshot_symbols(conn, ["JNJ", "MRK"])
+            finally:
+                conn.close()
+
+        self.assertEqual(missing, ["MRK"])
 
 
 if __name__ == "__main__":

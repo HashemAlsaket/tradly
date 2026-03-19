@@ -116,6 +116,70 @@ class RecommendationReviewTests(unittest.TestCase):
         self.assertEqual(rows[0]["review_disposition"], "defer")
         self.assertEqual(rows[0]["review_reason_code"], "intraday_freshness_not_ready")
 
+    def test_healthcare_direct_news_thin_evidence_downgrades_promote(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "JNJ",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 76,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 18, 15, 0, 0),
+            symbol_metadata={
+                "JNJ": {
+                    "sector": "Healthcare",
+                    "industry": "Drug Manufacturers - General",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["core_leader", "pharma_defensive"],
+                }
+            },
+            symbol_news_rows_by_symbol={"JNJ": {"coverage_state": "thin_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "review_required")
+        self.assertEqual(rows[0]["review_reason_code"], "healthcare_thin_evidence")
+        self.assertEqual(rows[0]["sector_subtype"], "pharma_defensive")
+
+    def test_healthcare_tools_devices_promote_gets_specialized_reason(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "TMO",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 74,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 18, 15, 0, 0),
+            symbol_metadata={
+                "TMO": {
+                    "sector": "Healthcare",
+                    "industry": "Diagnostics & Research",
+                    "direct_news": False,
+                    "onboarding_stage": "modeled",
+                    "roles": ["quality_tools_devices"],
+                }
+            },
+            symbol_news_rows_by_symbol={},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "healthcare_tools_devices_actionable")
+        self.assertEqual(rows[0]["sector_subtype"], "quality_tools_devices")
+
 
 if __name__ == "__main__":
     unittest.main()

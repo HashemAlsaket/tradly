@@ -170,11 +170,13 @@ def _theme_from_symbol_meta(symbol_meta: dict[str, Any], symbol: str) -> str:
 
     if "semis" in roles:
         return "semis_ai_beta"
+    if sector == "Healthcare":
+        return "healthcare"
     if sector == "Financial Services":
         return "financials_rates"
     if sector == "Energy":
         return "energy"
-    if sector in {"Utilities", "Consumer Defensive", "Healthcare"}:
+    if sector in {"Utilities", "Consumer Defensive"}:
         return "defensives"
     if asset_type == "etf" and (
         "index" in industry.lower() or symbol in {"SPY", "QQQ", "IWM", "DIA", "VTI"}
