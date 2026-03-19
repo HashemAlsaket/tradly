@@ -2,11 +2,11 @@
   "version": 1,
   "summary": {
     "all_symbols": 118,
-    "active_symbols": 55,
-    "market_data_symbols": 85,
-    "model_symbols": 55,
-    "direct_news_symbols": 60,
-    "portfolio_eligible_symbols": 18
+    "active_symbols": 57,
+    "market_data_symbols": 88,
+    "model_symbols": 57,
+    "direct_news_symbols": 62,
+    "portfolio_eligible_symbols": 20
   },
   "scopes": {
     "all_symbols": [
@@ -147,6 +147,7 @@
       "DHR",
       "DIA",
       "DIS",
+      "EOG",
       "GE",
       "GOOGL",
       "GS",
@@ -176,6 +177,7 @@
       "PG",
       "PLTR",
       "QQQ",
+      "SLB",
       "SNDK",
       "SPY",
       "TMO",
@@ -216,6 +218,7 @@
       "DHR",
       "DIA",
       "DIS",
+      "EOG",
       "GE",
       "GILD",
       "GOOGL",
@@ -242,12 +245,14 @@
       "NVDA",
       "NVTS",
       "ORCL",
+      "OXY",
       "PEP",
       "PFE",
       "PG",
       "PLTR",
       "QQQ",
       "SHY",
+      "SLB",
       "SNDK",
       "SPY",
       "TLT",
@@ -291,6 +296,7 @@
       "DHR",
       "DIA",
       "DIS",
+      "EOG",
       "GE",
       "GOOGL",
       "GS",
@@ -320,6 +326,7 @@
       "PG",
       "PLTR",
       "QQQ",
+      "SLB",
       "SNDK",
       "SPY",
       "TMO",
@@ -342,6 +349,7 @@
       "COST",
       "CRM",
       "CSCO",
+      "CVX",
       "EWJ",
       "EWT",
       "FXI",
@@ -390,12 +398,14 @@
       "XLRE",
       "XLU",
       "XLY",
+      "XOM",
       "XSD"
     ],
     "portfolio_eligible_symbols": [
       "CAT",
       "COST",
       "CRM",
+      "CVX",
       "DHR",
       "GE",
       "GOOGL",
@@ -410,7 +420,8 @@
       "PG",
       "TMO",
       "UNH",
-      "WMT"
+      "WMT",
+      "XOM"
     ]
   },
   "groupings": {
@@ -621,6 +632,9 @@
         "NVTS",
         "SNDK"
       ],
+      "energy_services": [
+        "SLB"
+      ],
       "enterprise_software": [
         "CRM"
       ],
@@ -631,6 +645,10 @@
       "household_personal_care": [
         "CL",
         "PG"
+      ],
+      "integrated_majors": [
+        "CVX",
+        "XOM"
       ],
       "internet_platforms": [
         "GOOGL",
@@ -677,6 +695,7 @@
         "CL",
         "CVS",
         "GILD",
+        "OXY",
         "UNP",
         "UPS"
       ],
@@ -788,6 +807,7 @@
       ],
       "sector_proxy": [
         "XLC",
+        "XLE",
         "XLI",
         "XLK",
         "XLP",
@@ -814,6 +834,10 @@
       ],
       "streaming_media": [
         "NFLX"
+      ],
+      "upstream_ep": [
+        "EOG",
+        "OXY"
       ]
     },
     "by_onboarding_stage": {
@@ -822,6 +846,7 @@
         "CL",
         "CVS",
         "GILD",
+        "OXY",
         "UNP",
         "UPS",
         "XLV"
@@ -832,9 +857,11 @@
         "DE",
         "DHR",
         "DIS",
+        "EOG",
         "ISRG",
         "PEP",
         "PLTR",
+        "SLB",
         "TMO"
       ],
       "modeled_with_direct_news": [
@@ -842,6 +869,7 @@
         "COST",
         "CRM",
         "CSCO",
+        "CVX",
         "GE",
         "GOOGL",
         "HON",
@@ -855,7 +883,8 @@
         "ORCL",
         "PG",
         "UNH",
-        "WMT"
+        "WMT",
+        "XOM"
       ]
     },
     "news_buckets": {
@@ -900,6 +929,10 @@
         "GOOGL",
         "META",
         "NFLX"
+      ],
+      "energy_core": [
+        "CVX",
+        "XOM"
       ],
       "us_macro": [
         "ARKK",

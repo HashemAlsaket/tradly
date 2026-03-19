@@ -448,6 +448,70 @@ class RecommendationReviewTests(unittest.TestCase):
         self.assertEqual(rows[0]["review_reason_code"], "technology_networking_actionable")
         self.assertEqual(rows[0]["sector_subtype"], "networking_infrastructure")
 
+    def test_energy_direct_news_thin_evidence_downgrades_promote(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "CVX",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 76,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 18, 0, 0),
+            symbol_metadata={
+                "CVX": {
+                    "sector": "Energy",
+                    "industry": "Oil & Gas Integrated",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["sector_leader", "integrated_majors"],
+                }
+            },
+            symbol_news_rows_by_symbol={"CVX": {"coverage_state": "thin_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "review_required")
+        self.assertEqual(rows[0]["review_reason_code"], "energy_thin_evidence")
+        self.assertEqual(rows[0]["sector_subtype"], "integrated_majors")
+
+    def test_energy_promote_gets_specialized_reason(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "SLB",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 72,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 18, 0, 0),
+            symbol_metadata={
+                "SLB": {
+                    "sector": "Energy",
+                    "industry": "Oil & Gas Equipment & Services",
+                    "direct_news": False,
+                    "onboarding_stage": "modeled",
+                    "roles": ["sector_leader", "energy_services"],
+                }
+            },
+            symbol_news_rows_by_symbol={},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "energy_services_actionable")
+        self.assertEqual(rows[0]["sector_subtype"], "energy_services")
+
     def test_event_risk_caps_buy_to_watch(self) -> None:
         rows = build_review_rows(
             recommendation_rows=[

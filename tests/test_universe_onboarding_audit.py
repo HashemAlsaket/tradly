@@ -159,6 +159,30 @@ class UniverseOnboardingAuditTest(unittest.TestCase):
 
         self.assertEqual(checks["sector_proxy_present"]["status"], "pass")
 
+    def test_energy_sector_proxy_is_checked_with_xle(self) -> None:
+        flags = _expected_flags({"onboarding_stage": "modeled_with_direct_news", "portfolio_eligible": True})
+        checks = _build_checks(
+            symbol="CVX",
+            sector_proxy="XLE",
+            flags=flags,
+            instrument_symbols={"CVX"},
+            market_data_symbols={"CVX", "XLE"},
+            model_symbols={"CVX"},
+            direct_news_symbols={"CVX"},
+            portfolio_symbols={"CVX"},
+            daily_dates={("CVX", "2026-03-18")},
+            latest_daily_market_date="2026-03-18",
+            intraday_symbols={"CVX"},
+            watermark_symbols=set(),
+            snapshot_symbols={"CVX"},
+            symbol_movement_symbols={"CVX"},
+            recommendation_symbols={"CVX"},
+            symbol_news_symbols={"CVX"},
+            portfolio_policy_symbols={"CVX"},
+        )
+
+        self.assertEqual(checks["sector_proxy_present"]["status"], "pass")
+
 
 if __name__ == "__main__":
     unittest.main()

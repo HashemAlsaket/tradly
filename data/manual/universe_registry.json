@@ -407,14 +407,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Energy",
       "industry": "Oil & Gas Integrated",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "integrated_majors"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "energy_core"
+      ]
     },
     {
       "symbol": "CVS",
@@ -523,15 +528,18 @@
     {
       "symbol": "EOG",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Energy",
       "industry": "Oil & Gas E&P",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "upstream_ep"
       ],
       "news_buckets": []
     },
@@ -1291,14 +1299,18 @@
       "symbol": "OXY",
       "asset_type": "stock",
       "active": false,
-      "market_data": false,
+      "market_data": true,
       "model": false,
       "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "Energy",
       "industry": "Oil & Gas E&P",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "upstream_ep",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
@@ -1427,15 +1439,18 @@
     {
       "symbol": "SLB",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Energy",
       "industry": "Oil & Gas Equipment & Services",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "energy_services"
       ],
       "news_buckets": []
     },
@@ -1866,7 +1881,8 @@
       "industry": "Energy ETF",
       "halal_flag": "investable",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"
@@ -2022,14 +2038,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Energy",
       "industry": "Oil & Gas Integrated",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "integrated_majors"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "energy_core"
+      ]
     },
     {
       "symbol": "XSD",

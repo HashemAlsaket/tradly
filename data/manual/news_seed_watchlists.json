@@ -5,6 +5,7 @@
   "daily_request_budget": 2500,
   "bucket_daily_caps": {
     "core_semis": 1200,
+    "technology_core": 300,
     "healthcare_core": 300,
     "industrials_core": 300,
     "consumer_defensive_core": 300,
@@ -14,7 +15,7 @@
     "asia_macro": 200,
     "sector_context": 200,
     "event_reserve": 100,
-    "technology_core": 300
+    "energy_core": 300
   },
   "bucket_request_overrides": {
     "industrials_core": {
@@ -65,6 +66,10 @@
       "GOOGL",
       "META",
       "NFLX"
+    ],
+    "energy_core": [
+      "CVX",
+      "XOM"
     ],
     "us_macro": [
       "ARKK",

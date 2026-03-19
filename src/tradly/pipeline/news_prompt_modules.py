@@ -49,6 +49,11 @@ SECTOR_MODULE_RULES = {
         "Prefer concise tags such as `digital_ad_demand`, `platform_monetization`, `streaming_engagement`, `subscriber_churn`, `content_pipeline`, `regulatory_platform_risk`, `ad_pricing_mix`.",
         "When a communication services article is mainly about internet platforms, streaming media, entertainment, or cable broadband, keep the impact scope as `communication_services` or `symbol_specific` rather than forcing it into broad market buckets.",
     ],
+    "energy": [
+        "For energy articles, classify the impact using energy-aware thesis tags when applicable.",
+        "Prefer concise tags such as `oil_price_leverage`, `upstream_supply_discipline`, `refining_margin`, `opec_supply`, `energy_services_demand`, `commodity_cost_pass_through`.",
+        "When an energy article is mainly about integrated majors, upstream exploration and production, oilfield services, or commodity-linked cash flow leverage, keep the impact scope as `energy` or `symbol_specific` rather than forcing it into broad market or macro buckets.",
+    ],
 }
 
 

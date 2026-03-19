@@ -29,7 +29,7 @@ DHR,stock,Healthcare,Diagnostics & Research,investable,true
 DIA,etf,ETF,Large Cap ETF,investable,true
 DIS,stock,Communication Services,Entertainment,investable,true
 DUK,stock,Utilities,Utilities - Regulated Electric,investable,false
-EOG,stock,Energy,Oil & Gas E&P,investable,false
+EOG,stock,Energy,Oil & Gas E&P,investable,true
 EQIX,stock,Real Estate,REIT - Specialty,investable,false
 EWJ,etf,ETF,Context Symbol,review_required,false
 EWT,etf,ETF,Context Symbol,review_required,false
@@ -81,7 +81,7 @@ PLD,stock,Real Estate,REIT - Industrial,investable,false
 PLTR,stock,Technology,Software - Infrastructure,investable,true
 QQQ,etf,ETF,Large Cap Growth ETF,investable,true
 SHY,etf,Macro,Treasury Bond ETF,review_required,false
-SLB,stock,Energy,Oil & Gas Equipment & Services,investable,false
+SLB,stock,Energy,Oil & Gas Equipment & Services,investable,true
 SMCI,stock,Technology,Computer Hardware,investable,false
 SMH,etf,ETF,Context Symbol,review_required,false
 SNDK,stock,Technology,Semiconductors,investable,true

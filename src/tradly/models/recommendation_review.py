@@ -79,6 +79,18 @@ def _technology_subtype(metadata: dict[str, Any]) -> str:
     return "general_technology"
 
 
+def _energy_subtype(metadata: dict[str, Any]) -> str:
+    roles = {str(role).strip().lower() for role in metadata.get("roles", []) if str(role).strip()}
+    industry = str(metadata.get("industry", "")).strip().lower()
+    if "integrated_majors" in roles or "integrated" in industry:
+        return "integrated_majors"
+    if "energy_services" in roles or "equipment & services" in industry or "services" in industry:
+        return "energy_services"
+    if "upstream_ep" in roles or "e&p" in industry or "exploration" in industry:
+        return "upstream_ep"
+    return "general_energy"
+
+
 def _market_stress_level(market_row: dict[str, Any] | None) -> str:
     if not isinstance(market_row, dict):
         return "low"
@@ -332,6 +344,24 @@ def build_review_rows(
                     reason_code = "technology_actionable"
             elif disposition == "review_required" and onboarding_stage in {"modeled", "modeled_with_direct_news"}:
                 reason_code = "technology_probationary_modeled"
+        elif sector == "Energy":
+            sector_subtype = _energy_subtype(metadata)
+            if direct_news and symbol_news_coverage in {"thin_evidence", "insufficient_evidence"}:
+                if disposition == "promote":
+                    disposition = "review_required"
+                if reason_code in {"regime_aligned_actionable", "mixed_strong_actionable"}:
+                    reason_code = "energy_thin_evidence"
+            elif disposition == "promote":
+                if sector_subtype == "integrated_majors":
+                    reason_code = "energy_integrated_actionable"
+                elif sector_subtype == "energy_services":
+                    reason_code = "energy_services_actionable"
+                elif sector_subtype == "upstream_ep":
+                    reason_code = "energy_upstream_actionable"
+                else:
+                    reason_code = "energy_actionable"
+            elif disposition == "review_required" and onboarding_stage in {"modeled", "modeled_with_direct_news"}:
+                reason_code = "energy_probationary_modeled"
 
         event_action_bias = str(event_risk_row.get("action_bias", "")).strip().lower()
         event_reaction_state = str(event_risk_row.get("reaction_state", "")).strip().lower()
@@ -382,6 +412,8 @@ def build_review_rows(
                 "communication_services_probationary_modeled",
                 "technology_thin_evidence",
                 "technology_probationary_modeled",
+                "energy_thin_evidence",
+                "energy_probationary_modeled",
             }:
                 confidence = int(row.get("confidence_score", 0) or 0)
                 if market_stress == "high" and confidence >= 70 and str(row.get("recommended_horizon", "")).strip() in {"1to2w", "2to6w"}:
