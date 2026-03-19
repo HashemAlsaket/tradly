@@ -8,11 +8,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Technology",
       "industry": "Consumer Electronics",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "consumer_hardware"
       ],
       "news_buckets": []
     },
@@ -38,11 +41,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Technology",
       "industry": "Software - Application",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "creative_application_software"
       ],
       "news_buckets": []
     },
@@ -361,14 +367,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Technology",
       "industry": "Software - Application",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "enterprise_software"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "technology_core"
+      ]
     },
     {
       "symbol": "CSCO",
@@ -376,14 +387,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": false,
       "sector": "Technology",
       "industry": "Communication Equipment",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "networking_infrastructure"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "technology_core"
+      ]
     },
     {
       "symbol": "CVX",
@@ -1095,14 +1111,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Technology",
       "industry": "Software - Infrastructure",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "cloud_platforms"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "technology_core"
+      ]
     },
     {
       "symbol": "MU",
@@ -1252,14 +1273,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Technology",
       "industry": "Software - Infrastructure",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "cloud_platforms"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "technology_core"
+      ]
     },
     {
       "symbol": "OXY",
@@ -1352,11 +1378,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Technology",
       "industry": "Software - Infrastructure",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "ai_application_software"
       ],
       "news_buckets": []
     },
@@ -1886,11 +1915,13 @@
       "market_data": true,
       "model": false,
       "direct_news": true,
+      "portfolio_eligible": false,
       "sector": "ETF",
       "industry": "Context Symbol",
       "halal_flag": "review_required",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"

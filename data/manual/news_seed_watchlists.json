@@ -13,7 +13,8 @@
     "asia_semis": 300,
     "asia_macro": 200,
     "sector_context": 200,
-    "event_reserve": 100
+    "event_reserve": 100,
+    "technology_core": 300
   },
   "bucket_request_overrides": {
     "industrials_core": {
@@ -36,6 +37,12 @@
       "NVTS",
       "SNDK",
       "TSM"
+    ],
+    "technology_core": [
+      "CRM",
+      "CSCO",
+      "MSFT",
+      "ORCL"
     ],
     "healthcare_core": [
       "JNJ",

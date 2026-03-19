@@ -87,6 +87,30 @@ class UniverseOnboardingAuditTest(unittest.TestCase):
 
         self.assertEqual(checks["sector_proxy_present"]["status"], "pass")
 
+    def test_technology_sector_proxy_is_checked_with_xlk(self) -> None:
+        flags = _expected_flags({"onboarding_stage": "modeled_with_direct_news", "portfolio_eligible": True})
+        checks = _build_checks(
+            symbol="MSFT",
+            sector_proxy="XLK",
+            flags=flags,
+            instrument_symbols={"MSFT"},
+            market_data_symbols={"MSFT", "XLK"},
+            model_symbols={"MSFT"},
+            direct_news_symbols={"MSFT"},
+            portfolio_symbols={"MSFT"},
+            daily_dates={("MSFT", "2026-03-18")},
+            latest_daily_market_date="2026-03-18",
+            intraday_symbols={"MSFT"},
+            watermark_symbols=set(),
+            snapshot_symbols={"MSFT"},
+            symbol_movement_symbols={"MSFT"},
+            recommendation_symbols={"MSFT"},
+            symbol_news_symbols={"MSFT"},
+            portfolio_policy_symbols={"MSFT"},
+        )
+
+        self.assertEqual(checks["sector_proxy_present"]["status"], "pass")
+
     def test_consumer_defensive_sector_proxy_is_checked_with_xlp(self) -> None:
         flags = _expected_flags({"onboarding_stage": "modeled_with_direct_news", "portfolio_eligible": True})
         checks = _build_checks(

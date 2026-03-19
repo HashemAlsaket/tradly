@@ -184,6 +184,7 @@ def main() -> int:
         conn.close()
 
     sector_proxy_checks = {
+        "Technology": "XLK",
         "Healthcare": "XLV",
         "Industrials": "XLI",
         "Consumer Defensive": "XLP",

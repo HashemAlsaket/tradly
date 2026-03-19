@@ -11,6 +11,7 @@ REQUIRED_NEWS_BUCKETS = (
     "event_reserve",
 )
 OPTIONAL_NEWS_BUCKETS = (
+    "technology_core",
     "healthcare_core",
     "industrials_core",
     "consumer_defensive_core",

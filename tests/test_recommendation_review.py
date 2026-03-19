@@ -384,6 +384,70 @@ class RecommendationReviewTests(unittest.TestCase):
         self.assertEqual(rows[0]["review_reason_code"], "consumer_defensive_household_actionable")
         self.assertEqual(rows[0]["sector_subtype"], "household_personal_care")
 
+    def test_technology_direct_news_thin_evidence_downgrades_promote(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "MSFT",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "2to6w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 76,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 17, 0, 0),
+            symbol_metadata={
+                "MSFT": {
+                    "sector": "Technology",
+                    "industry": "Software - Infrastructure",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["sector_leader", "cloud_platforms"],
+                }
+            },
+            symbol_news_rows_by_symbol={"MSFT": {"coverage_state": "thin_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "review_required")
+        self.assertEqual(rows[0]["review_reason_code"], "technology_thin_evidence")
+        self.assertEqual(rows[0]["sector_subtype"], "cloud_platforms")
+
+    def test_technology_promote_gets_specialized_reason(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "CSCO",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 72,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 17, 0, 0),
+            symbol_metadata={
+                "CSCO": {
+                    "sector": "Technology",
+                    "industry": "Communication Equipment",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["sector_leader", "networking_infrastructure"],
+                }
+            },
+            symbol_news_rows_by_symbol={"CSCO": {"coverage_state": "sufficient_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "technology_networking_actionable")
+        self.assertEqual(rows[0]["sector_subtype"], "networking_infrastructure")
+
     def test_event_risk_caps_buy_to_watch(self) -> None:
         rows = build_review_rows(
             recommendation_rows=[

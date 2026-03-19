@@ -63,6 +63,22 @@ def _communication_services_subtype(metadata: dict[str, Any]) -> str:
     return "general_communication_services"
 
 
+def _technology_subtype(metadata: dict[str, Any]) -> str:
+    roles = {str(role).strip().lower() for role in metadata.get("roles", []) if str(role).strip()}
+    industry = str(metadata.get("industry", "")).strip().lower()
+    if "cloud_platforms" in roles or "software - infrastructure" in industry:
+        return "cloud_platforms"
+    if "enterprise_software" in roles or "software - application" in industry:
+        return "enterprise_software"
+    if "networking_infrastructure" in roles or "communication equipment" in industry or "network" in industry:
+        return "networking_infrastructure"
+    if "consumer_hardware" in roles or "consumer electronics" in industry or "computer hardware" in industry:
+        return "consumer_hardware"
+    if "ai_application_software" in roles:
+        return "ai_application_software"
+    return "general_technology"
+
+
 def _market_stress_level(market_row: dict[str, Any] | None) -> str:
     if not isinstance(market_row, dict):
         return "low"
@@ -292,6 +308,30 @@ def build_review_rows(
                     reason_code = "communication_services_actionable"
             elif disposition == "review_required" and onboarding_stage in {"modeled", "modeled_with_direct_news"}:
                 reason_code = "communication_services_probationary_modeled"
+        elif sector == "Technology" and "semis" not in {
+            str(role).strip().lower() for role in metadata.get("roles", []) if str(role).strip()
+        }:
+            sector_subtype = _technology_subtype(metadata)
+            if direct_news and symbol_news_coverage in {"thin_evidence", "insufficient_evidence"}:
+                if disposition == "promote":
+                    disposition = "review_required"
+                if reason_code in {"regime_aligned_actionable", "mixed_strong_actionable"}:
+                    reason_code = "technology_thin_evidence"
+            elif disposition == "promote":
+                if sector_subtype == "cloud_platforms":
+                    reason_code = "technology_cloud_platform_actionable"
+                elif sector_subtype == "enterprise_software":
+                    reason_code = "technology_enterprise_software_actionable"
+                elif sector_subtype == "networking_infrastructure":
+                    reason_code = "technology_networking_actionable"
+                elif sector_subtype == "consumer_hardware":
+                    reason_code = "technology_consumer_hardware_actionable"
+                elif sector_subtype == "ai_application_software":
+                    reason_code = "technology_ai_application_actionable"
+                else:
+                    reason_code = "technology_actionable"
+            elif disposition == "review_required" and onboarding_stage in {"modeled", "modeled_with_direct_news"}:
+                reason_code = "technology_probationary_modeled"
 
         event_action_bias = str(event_risk_row.get("action_bias", "")).strip().lower()
         event_reaction_state = str(event_risk_row.get("reaction_state", "")).strip().lower()
@@ -340,6 +380,8 @@ def build_review_rows(
                 "consumer_defensive_probationary_modeled",
                 "communication_services_thin_evidence",
                 "communication_services_probationary_modeled",
+                "technology_thin_evidence",
+                "technology_probationary_modeled",
             }:
                 confidence = int(row.get("confidence_score", 0) or 0)
                 if market_stress == "high" and confidence >= 70 and str(row.get("recommended_horizon", "")).strip() in {"1to2w", "2to6w"}:

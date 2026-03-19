@@ -10,6 +10,7 @@ from tradly.services.universe_registry import normalize_registry_row
 
 BUCKET_ORDER = [
     "core_semis",
+    "technology_core",
     "healthcare_core",
     "industrials_core",
     "consumer_defensive_core",
@@ -22,6 +23,7 @@ BUCKET_ORDER = [
 ]
 
 DEFAULT_BUCKET_CAPS = {
+    "technology_core": 300,
     "healthcare_core": 300,
     "industrials_core": 300,
     "consumer_defensive_core": 300,

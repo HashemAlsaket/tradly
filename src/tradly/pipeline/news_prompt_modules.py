@@ -23,6 +23,12 @@ BASE_RULES = [
 ]
 
 SECTOR_MODULE_RULES = {
+    "technology": [
+        "For technology articles, classify the impact using broad-technology-aware thesis tags when applicable.",
+        "Prefer concise tags such as `cloud_spend`, `enterprise_it_demand`, `software_margin_durability`, `ai_platform_monetization`, `networking_refresh`, `hardware_upgrade_cycle`.",
+        "Use `semis` when the article is clearly semiconductor-specific. Use `technology` for broad software, infrastructure, enterprise IT, networking, or hardware platform articles.",
+        "When a broad technology article is mainly about cloud platforms, enterprise software, networking infrastructure, consumer hardware, or AI application software, keep the impact scope as `technology` or `symbol_specific` rather than forcing it into broad market buckets.",
+    ],
     "healthcare": [
         "For healthcare articles, classify the impact using healthcare-aware thesis tags when applicable.",
         "Prefer concise tags such as `trial_readout`, `drug_approval`, `regulatory`, `pricing_reimbursement`, `utilization_cost_pressure`, `devices_tools_demand`, `patent_litigation`, `defensive_earnings_resilience`.",
