@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from datetime import datetime
+import json
 from pathlib import Path
 
 import duckdb
@@ -10,6 +11,7 @@ import duckdb
 from tradly.pipeline.ingest_news_budgeted import (
     NEWS_WATERMARK_SOURCE,
     _effective_published_after,
+    _load_watchlists,
     _load_news_watermarks,
     _parse_marketaux_published_at,
     _should_continue_news_pagination,
@@ -108,6 +110,56 @@ class IngestNewsBudgetedTests(unittest.TestCase):
         )
         self.assertEqual(loaded["core_semis"], datetime(2026, 3, 16, 14, 5, 0))
         self.assertEqual(loaded["us_macro"], datetime(2026, 3, 16, 14, 6, 0))
+
+    def test_load_watchlists_supports_bucket_request_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "watchlists.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "daily_request_budget": 100,
+                        "limit_per_request": 3,
+                        "pulls_per_bucket_per_run": 1,
+                        "bucket_daily_caps": {
+                            "core_semis": 10,
+                            "healthcare_core": 10,
+                            "us_macro": 10,
+                            "asia_semis": 10,
+                            "asia_macro": 10,
+                            "sector_context": 10,
+                            "event_reserve": 10,
+                        },
+                        "bucket_request_overrides": {
+                            "industrials_core": {
+                                "limit_per_request": 5,
+                                "pulls_per_bucket_per_run": 2,
+                            }
+                        },
+                        "buckets": {
+                            "core_semis": ["NVDA"],
+                            "healthcare_core": ["JNJ"],
+                            "industrials_core": ["CAT"],
+                            "us_macro": ["SPY"],
+                            "asia_semis": ["TSM"],
+                            "asia_macro": ["FXI"],
+                            "sector_context": ["XLI"],
+                            "event_reserve": ["MU"],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (
+                _daily_budget,
+                _limit_per_request,
+                _pulls_per_bucket_per_run,
+                _caps,
+                _buckets,
+                overrides,
+            ) = _load_watchlists(path)
+
+        self.assertEqual(overrides["industrials_core"]["limit_per_request"], 5)
+        self.assertEqual(overrides["industrials_core"]["pulls_per_bucket_per_run"], 2)
 
 
 if __name__ == "__main__":

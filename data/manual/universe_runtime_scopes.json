@@ -2,11 +2,11 @@
   "version": 1,
   "summary": {
     "all_symbols": 118,
-    "active_symbols": 49,
-    "market_data_symbols": 77,
-    "model_symbols": 49,
-    "direct_news_symbols": 46,
-    "portfolio_eligible_symbols": 7
+    "active_symbols": 54,
+    "market_data_symbols": 83,
+    "model_symbols": 54,
+    "direct_news_symbols": 50,
+    "portfolio_eligible_symbols": 10
   },
   "scopes": {
     "all_symbols": [
@@ -137,16 +137,20 @@
       "AVGO",
       "BAC",
       "BLK",
+      "CAT",
       "COIN",
       "COST",
       "CRM",
       "CSCO",
       "CVX",
+      "DE",
       "DHR",
       "DIA",
       "DIS",
+      "GE",
       "GOOGL",
       "GS",
+      "HON",
       "INTC",
       "ISRG",
       "IWM",
@@ -154,6 +158,7 @@
       "JPM",
       "KO",
       "LLY",
+      "LMT",
       "MA",
       "MCD",
       "META",
@@ -205,12 +210,15 @@
       "CSCO",
       "CVS",
       "CVX",
+      "DE",
       "DHR",
       "DIA",
       "DIS",
+      "GE",
       "GILD",
       "GOOGL",
       "GS",
+      "HON",
       "IEF",
       "INTC",
       "ISRG",
@@ -219,6 +227,7 @@
       "JPM",
       "KO",
       "LLY",
+      "LMT",
       "MA",
       "MCD",
       "META",
@@ -242,6 +251,8 @@
       "TMO",
       "TSLA",
       "UNH",
+      "UNP",
+      "UPS",
       "V",
       "VIXY",
       "VTI",
@@ -267,16 +278,20 @@
       "AVGO",
       "BAC",
       "BLK",
+      "CAT",
       "COIN",
       "COST",
       "CRM",
       "CSCO",
       "CVX",
+      "DE",
       "DHR",
       "DIA",
       "DIS",
+      "GE",
       "GOOGL",
       "GS",
+      "HON",
       "INTC",
       "ISRG",
       "IWM",
@@ -284,6 +299,7 @@
       "JPM",
       "KO",
       "LLY",
+      "LMT",
       "MA",
       "MCD",
       "META",
@@ -318,10 +334,13 @@
       "ARM",
       "ASML",
       "AVGO",
+      "CAT",
       "EWJ",
       "EWT",
       "FXI",
+      "GE",
       "GLD",
+      "HON",
       "IEF",
       "INTC",
       "JNJ",
@@ -329,6 +348,7 @@
       "KRE",
       "KWEB",
       "LLY",
+      "LMT",
       "LRCX",
       "MRK",
       "MU",
@@ -359,7 +379,10 @@
       "XSD"
     ],
     "portfolio_eligible_symbols": [
+      "CAT",
       "DHR",
+      "GE",
+      "HON",
       "ISRG",
       "JNJ",
       "LLY",
@@ -516,6 +539,10 @@
       ]
     },
     "by_role": {
+      "aerospace_defense": [
+        "GE",
+        "LMT"
+      ],
       "asia_context": [
         "EWJ",
         "EWT",
@@ -537,15 +564,25 @@
         "SNDK"
       ],
       "core_leader": [
+        "CAT",
+        "GE",
+        "HON",
         "JNJ",
         "LLY",
         "UNH"
+      ],
+      "diversified_industrials": [
+        "HON"
       ],
       "earnings_focus": [
         "MU",
         "NVDA",
         "NVTS",
         "SNDK"
+      ],
+      "heavy_equipment_capex": [
+        "CAT",
+        "DE"
       ],
       "macro_context": [
         "ARKK",
@@ -575,12 +612,18 @@
       ],
       "probationary_market_data_only": [
         "CVS",
-        "GILD"
+        "GILD",
+        "UNP",
+        "UPS"
       ],
       "quality_tools_devices": [
         "DHR",
         "ISRG",
         "TMO"
+      ],
+      "rails_logistics": [
+        "UNP",
+        "UPS"
       ],
       "sector_context": [
         "KRE",
@@ -680,6 +723,7 @@
         "XOM"
       ],
       "sector_proxy": [
+        "XLI",
         "XLV"
       ],
       "semis": [
@@ -703,16 +747,23 @@
       "market_data_only": [
         "CVS",
         "GILD",
+        "UNP",
+        "UPS",
         "XLV"
       ],
       "modeled": [
+        "DE",
         "DHR",
         "ISRG",
         "TMO"
       ],
       "modeled_with_direct_news": [
+        "CAT",
+        "GE",
+        "HON",
         "JNJ",
         "LLY",
+        "LMT",
         "MRK",
         "UNH"
       ]
@@ -737,6 +788,12 @@
         "LLY",
         "MRK",
         "UNH"
+      ],
+      "industrials_core": [
+        "CAT",
+        "GE",
+        "HON",
+        "LMT"
       ],
       "us_macro": [
         "ARKK",

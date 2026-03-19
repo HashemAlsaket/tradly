@@ -63,6 +63,30 @@ class UniverseOnboardingAuditTest(unittest.TestCase):
         self.assertEqual(checks["symbol_news_present"]["status"], "fail")
         self.assertEqual(checks["portfolio_row_present"]["status"], "skipped")
 
+    def test_industrials_sector_proxy_is_checked_with_xli(self) -> None:
+        flags = _expected_flags({"onboarding_stage": "modeled", "portfolio_eligible": True})
+        checks = _build_checks(
+            symbol="CAT",
+            sector_proxy="XLI",
+            flags=flags,
+            instrument_symbols={"CAT"},
+            market_data_symbols={"CAT", "XLI"},
+            model_symbols={"CAT"},
+            direct_news_symbols=set(),
+            portfolio_symbols={"CAT"},
+            daily_dates={("CAT", "2026-03-18")},
+            latest_daily_market_date="2026-03-18",
+            intraday_symbols={"CAT"},
+            watermark_symbols=set(),
+            snapshot_symbols={"CAT"},
+            symbol_movement_symbols={"CAT"},
+            recommendation_symbols={"CAT"},
+            symbol_news_symbols=set(),
+            portfolio_policy_symbols={"CAT"},
+        )
+
+        self.assertEqual(checks["sector_proxy_present"]["status"], "pass")
+
 
 if __name__ == "__main__":
     unittest.main()

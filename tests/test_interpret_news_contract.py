@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from tradly.pipeline.interpret_news_llm import _normalize_record, _validate_record
+from tradly.pipeline.news_prompt_modules import build_news_interpreter_user_prompt
 
 
 class InterpretNewsContractTests(unittest.TestCase):
@@ -156,6 +157,23 @@ class InterpretNewsContractTests(unittest.TestCase):
         ok, reason = _validate_record(row)
         self.assertFalse(ok)
         self.assertEqual(reason, "impact_scope_invalid")
+
+    def test_prompt_builder_includes_only_relevant_sector_guidance(self) -> None:
+        prompt = build_news_interpreter_user_prompt(
+            [
+                {
+                    "provider": "marketaux",
+                    "provider_news_id": "g1",
+                    "headline": "GE contract update",
+                    "summary": "Aerospace contract news.",
+                    "symbols": ["GE"],
+                    "symbol_sector_hints": ["industrials"],
+                }
+            ]
+        )
+
+        self.assertIn("industrials-aware thesis tags", prompt)
+        self.assertNotIn("healthcare-aware thesis tags", prompt)
 
 
 if __name__ == "__main__":

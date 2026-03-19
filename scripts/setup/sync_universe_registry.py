@@ -11,6 +11,7 @@ from tradly.services.universe_registry import normalize_registry_row
 BUCKET_ORDER = [
     "core_semis",
     "healthcare_core",
+    "industrials_core",
     "us_macro",
     "asia_semis",
     "asia_macro",
@@ -20,6 +21,7 @@ BUCKET_ORDER = [
 
 DEFAULT_BUCKET_CAPS = {
     "healthcare_core": 300,
+    "industrials_core": 300,
 }
 
 
@@ -139,6 +141,7 @@ def _write_watchlists(path: Path, template_path: Path, symbols: list[dict]) -> N
         "pulls_per_bucket_per_run": int(template.get("pulls_per_bucket_per_run", 1)),
         "daily_request_budget": int(template.get("daily_request_budget", 100)),
         "bucket_daily_caps": ordered_caps,
+        "bucket_request_overrides": template.get("bucket_request_overrides", {}),
         "max_pages_per_bucket": int(template.get("max_pages_per_bucket", 300)),
         "buckets": buckets,
     }

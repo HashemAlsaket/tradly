@@ -21,6 +21,20 @@ def _healthcare_subtype(metadata: dict[str, Any]) -> str:
     return "general_healthcare"
 
 
+def _industrials_subtype(metadata: dict[str, Any]) -> str:
+    roles = {str(role).strip().lower() for role in metadata.get("roles", []) if str(role).strip()}
+    industry = str(metadata.get("industry", "")).strip().lower()
+    if "heavy_equipment_capex" in roles or "construction machinery" in industry or "farm" in industry:
+        return "heavy_equipment_capex"
+    if "aerospace_defense" in roles or "aerospace" in industry or "defense" in industry:
+        return "aerospace_defense"
+    if "diversified_industrials" in roles or "industrial machinery" in industry:
+        return "diversified_industrials"
+    if "rails_logistics" in roles or "rail" in industry or "logistics" in industry or "freight" in industry:
+        return "rails_logistics"
+    return "general_industrials"
+
+
 def _market_stress_level(market_row: dict[str, Any] | None) -> str:
     if not isinstance(market_row, dict):
         return "low"
@@ -129,26 +143,46 @@ def build_review_rows(
         direct_news = bool(metadata.get("direct_news", False))
         onboarding_stage = str(metadata.get("onboarding_stage", "")).strip()
         symbol_news_coverage = str(symbol_news_row.get("coverage_state", "")).strip().lower()
-        healthcare_subtype = ""
+        sector_subtype = ""
 
         if sector == "Healthcare":
-            healthcare_subtype = _healthcare_subtype(metadata)
+            sector_subtype = _healthcare_subtype(metadata)
             if direct_news and symbol_news_coverage in {"thin_evidence", "insufficient_evidence"}:
                 if disposition == "promote":
                     disposition = "review_required"
                 if reason_code in {"regime_aligned_actionable", "mixed_strong_actionable"}:
                     reason_code = "healthcare_thin_evidence"
             elif disposition == "promote":
-                if healthcare_subtype == "pharma_defensive":
+                if sector_subtype == "pharma_defensive":
                     reason_code = "healthcare_pharma_actionable"
-                elif healthcare_subtype == "quality_tools_devices":
+                elif sector_subtype == "quality_tools_devices":
                     reason_code = "healthcare_tools_devices_actionable"
-                elif healthcare_subtype == "managed_care_retail_health":
+                elif sector_subtype == "managed_care_retail_health":
                     reason_code = "healthcare_managed_care_actionable"
                 else:
                     reason_code = "healthcare_actionable"
             elif disposition == "review_required" and onboarding_stage == "modeled":
                 reason_code = "healthcare_probationary_modeled"
+        elif sector == "Industrials":
+            sector_subtype = _industrials_subtype(metadata)
+            if direct_news and symbol_news_coverage in {"thin_evidence", "insufficient_evidence"}:
+                if disposition == "promote":
+                    disposition = "review_required"
+                if reason_code in {"regime_aligned_actionable", "mixed_strong_actionable"}:
+                    reason_code = "industrials_thin_evidence"
+            elif disposition == "promote":
+                if sector_subtype == "heavy_equipment_capex":
+                    reason_code = "industrials_heavy_equipment_actionable"
+                elif sector_subtype == "aerospace_defense":
+                    reason_code = "industrials_aerospace_defense_actionable"
+                elif sector_subtype == "diversified_industrials":
+                    reason_code = "industrials_diversified_actionable"
+                elif sector_subtype == "rails_logistics":
+                    reason_code = "industrials_logistics_actionable"
+                else:
+                    reason_code = "industrials_actionable"
+            elif disposition == "review_required" and onboarding_stage in {"modeled", "modeled_with_direct_news"}:
+                reason_code = "industrials_probationary_modeled"
 
         event_action_bias = str(event_risk_row.get("action_bias", "")).strip().lower()
         event_reaction_state = str(event_risk_row.get("reaction_state", "")).strip().lower()
@@ -191,6 +225,8 @@ def build_review_rows(
                 "event_reaction_damage",
                 "event_reaction_caution",
                 "healthcare_thin_evidence",
+                "industrials_thin_evidence",
+                "industrials_probationary_modeled",
             }:
                 confidence = int(row.get("confidence_score", 0) or 0)
                 if market_stress == "high" and confidence >= 70 and str(row.get("recommended_horizon", "")).strip() in {"1to2w", "2to6w"}:
@@ -223,7 +259,7 @@ def build_review_rows(
                 "event_reaction_severity": event_reaction_severity,
                 "market_stress_level": market_stress,
                 "sector": sector,
-                "sector_subtype": healthcare_subtype,
+                "sector_subtype": sector_subtype,
                 "primary_reason_code": row.get("primary_reason_code"),
                 "why_code": row.get("why_code", []),
                 "as_of_utc": now_utc.isoformat(),

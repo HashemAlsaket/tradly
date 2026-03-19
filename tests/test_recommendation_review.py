@@ -201,6 +201,70 @@ class RecommendationReviewTests(unittest.TestCase):
         self.assertEqual(rows[0]["review_reason_code"], "healthcare_tools_devices_actionable")
         self.assertEqual(rows[0]["sector_subtype"], "quality_tools_devices")
 
+    def test_industrials_direct_news_thin_evidence_downgrades_promote(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "GE",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 76,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 4, 0, 0),
+            symbol_metadata={
+                "GE": {
+                    "sector": "Industrials",
+                    "industry": "Aerospace & Defense",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["core_leader", "aerospace_defense"],
+                }
+            },
+            symbol_news_rows_by_symbol={"GE": {"coverage_state": "thin_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "review_required")
+        self.assertEqual(rows[0]["review_reason_code"], "industrials_thin_evidence")
+        self.assertEqual(rows[0]["sector_subtype"], "aerospace_defense")
+
+    def test_industrials_promote_gets_specialized_reason(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "CAT",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 74,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 4, 0, 0),
+            symbol_metadata={
+                "CAT": {
+                    "sector": "Industrials",
+                    "industry": "Farm & Heavy Construction Machinery",
+                    "direct_news": False,
+                    "onboarding_stage": "modeled",
+                    "roles": ["core_leader", "heavy_equipment_capex"],
+                }
+            },
+            symbol_news_rows_by_symbol={},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "industrials_heavy_equipment_actionable")
+        self.assertEqual(rows[0]["sector_subtype"], "heavy_equipment_capex")
+
     def test_event_risk_caps_buy_to_watch(self) -> None:
         rows = build_review_rows(
             recommendation_rows=[

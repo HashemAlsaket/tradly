@@ -263,17 +263,23 @@
     {
       "symbol": "CAT",
       "asset_type": "stock",
-      "active": false,
+      "active": true,
       "market_data": true,
-      "model": false,
-      "direct_news": false,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Industrials",
       "industry": "Farm & Heavy Construction Machinery",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "heavy_equipment_capex"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "industrials_core"
+      ]
     },
     {
       "symbol": "CHTR",
@@ -402,15 +408,18 @@
     {
       "symbol": "DE",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Industrials",
       "industry": "Farm & Heavy Construction Machinery",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "heavy_equipment_capex"
       ],
       "news_buckets": []
     },
@@ -592,17 +601,23 @@
     {
       "symbol": "GE",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
-      "direct_news": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Industrials",
       "industry": "Aerospace & Defense",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "aerospace_defense"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "industrials_core"
+      ]
     },
     {
       "symbol": "GILD",
@@ -673,17 +688,23 @@
     {
       "symbol": "HON",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
-      "direct_news": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Industrials",
       "industry": "Specialty Industrial Machinery",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "diversified_industrials"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "industrials_core"
+      ]
     },
     {
       "symbol": "I:VIX",
@@ -911,17 +932,22 @@
     {
       "symbol": "LMT",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
-      "direct_news": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": false,
       "sector": "Industrials",
       "industry": "Aerospace & Defense",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "aerospace_defense"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "industrials_core"
+      ]
     },
     {
       "symbol": "LRCX",
@@ -1584,14 +1610,18 @@
       "symbol": "UNP",
       "asset_type": "stock",
       "active": false,
-      "market_data": false,
+      "market_data": true,
       "model": false,
       "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "Industrials",
       "industry": "Railroads",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "rails_logistics",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
@@ -1599,14 +1629,18 @@
       "symbol": "UPS",
       "asset_type": "stock",
       "active": false,
-      "market_data": false,
+      "market_data": true,
       "model": false,
       "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "Industrials",
       "industry": "Integrated Freight & Logistics",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "rails_logistics",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
@@ -1784,11 +1818,13 @@
       "market_data": true,
       "model": false,
       "direct_news": true,
+      "portfolio_eligible": false,
       "sector": "ETF",
       "industry": "Industrials ETF",
       "halal_flag": "investable",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"

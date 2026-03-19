@@ -31,6 +31,21 @@ REQUIRED_BUCKETS = (
 )
 
 
+def _bucket_override_int(
+    overrides: dict[str, dict[str, int]],
+    bucket: str,
+    field: str,
+    default_value: int,
+) -> int:
+    bucket_overrides = overrides.get(bucket, {})
+    value = bucket_overrides.get(field, default_value)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default_value
+    return parsed if parsed > 0 else default_value
+
+
 def _artifact_output_path(repo_root: Path, run_date: str) -> Path:
     out_dir = repo_root / "data" / "runs" / run_date
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -81,7 +96,7 @@ def _normalize_published_after(value: str | None) -> str | None:
         return raw
 
 
-def _load_watchlists(path: Path) -> tuple[int, int, int, dict[str, int], dict[str, list[str]]]:
+def _load_watchlists(path: Path) -> tuple[int, int, int, dict[str, int], dict[str, list[str]], dict[str, dict[str, int]]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise RuntimeError("watchlist config must be object")
@@ -90,9 +105,10 @@ def _load_watchlists(path: Path) -> tuple[int, int, int, dict[str, int], dict[st
     pulls_per_bucket_per_run = int(payload.get("pulls_per_bucket_per_run", DEFAULT_PULLS_PER_BUCKET_PER_RUN))
     caps_raw = payload.get("bucket_daily_caps", {})
     buckets_raw = payload.get("buckets", {})
+    overrides_raw = payload.get("bucket_request_overrides", {})
 
-    if not isinstance(caps_raw, dict) or not isinstance(buckets_raw, dict):
-        raise RuntimeError("bucket_daily_caps and buckets must be objects")
+    if not isinstance(caps_raw, dict) or not isinstance(buckets_raw, dict) or not isinstance(overrides_raw, dict):
+        raise RuntimeError("bucket_daily_caps, bucket_request_overrides, and buckets must be objects")
 
     caps: dict[str, int] = {}
     for key, value in caps_raw.items():
@@ -105,6 +121,23 @@ def _load_watchlists(path: Path) -> tuple[int, int, int, dict[str, int], dict[st
         parsed = [str(v).strip().upper() for v in values if str(v).strip()]
         if parsed:
             buckets[str(key)] = parsed
+    overrides: dict[str, dict[str, int]] = {}
+    for key, value in overrides_raw.items():
+        if not isinstance(value, dict):
+            continue
+        normalized: dict[str, int] = {}
+        for field in ("limit_per_request", "pulls_per_bucket_per_run"):
+            if field not in value:
+                continue
+            try:
+                parsed = int(value[field])
+            except (TypeError, ValueError):
+                raise RuntimeError(f"invalid_bucket_request_override:{key}:{field}")
+            if parsed <= 0:
+                raise RuntimeError(f"invalid_bucket_request_override:{key}:{field}")
+            normalized[field] = parsed
+        if normalized:
+            overrides[str(key)] = normalized
     if not buckets:
         raise RuntimeError("no buckets configured")
     missing_required = [bucket for bucket in REQUIRED_BUCKETS if bucket not in buckets]
@@ -115,7 +148,7 @@ def _load_watchlists(path: Path) -> tuple[int, int, int, dict[str, int], dict[st
         raise RuntimeError(f"empty_required_buckets:{','.join(empty_required)}")
     if pulls_per_bucket_per_run <= 0:
         pulls_per_bucket_per_run = DEFAULT_PULLS_PER_BUCKET_PER_RUN
-    return daily_budget, limit_per_request, pulls_per_bucket_per_run, caps, buckets
+    return daily_budget, limit_per_request, pulls_per_bucket_per_run, caps, buckets, overrides
 
 
 def _fetch_marketaux_news(
@@ -301,7 +334,7 @@ def main() -> int:
         return 4
 
     try:
-        daily_budget, limit_per_request, pulls_per_bucket_per_run, caps, buckets = _load_watchlists(watchlist_path)
+        daily_budget, limit_per_request, pulls_per_bucket_per_run, caps, buckets, bucket_request_overrides = _load_watchlists(watchlist_path)
     except RuntimeError as exc:
         print(f"invalid_watchlist_contract:{exc}")
         return 5
@@ -415,7 +448,19 @@ def main() -> int:
                 published_after_utc_raw,
                 previous_watermark,
             )
-            for page in range(1, pulls_per_bucket_per_run + 1):
+            bucket_limit_per_request = _bucket_override_int(
+                bucket_request_overrides,
+                bucket,
+                "limit_per_request",
+                limit_per_request,
+            )
+            bucket_pulls_per_run = _bucket_override_int(
+                bucket_request_overrides,
+                bucket,
+                "pulls_per_bucket_per_run",
+                pulls_per_bucket_per_run,
+            )
+            for page in range(1, bucket_pulls_per_run + 1):
                 if requests_made >= run_max_requests:
                     stop_all_buckets = True
                     print(
@@ -431,7 +476,7 @@ def main() -> int:
                     status_code, body, articles = _fetch_marketaux_news(
                         api_token,
                         symbols,
-                        limit_per_request,
+                        bucket_limit_per_request,
                         effective_published_after_utc,
                         page,
                     )

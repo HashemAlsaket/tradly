@@ -5,12 +5,19 @@
   "daily_request_budget": 2500,
   "bucket_daily_caps": {
     "core_semis": 1200,
+    "healthcare_core": 300,
+    "industrials_core": 300,
     "us_macro": 500,
     "asia_semis": 300,
     "asia_macro": 200,
     "sector_context": 200,
-    "event_reserve": 100,
-    "healthcare_core": 300
+    "event_reserve": 100
+  },
+  "bucket_request_overrides": {
+    "industrials_core": {
+      "limit_per_request": 5,
+      "pulls_per_bucket_per_run": 2
+    }
   },
   "max_pages_per_bucket": 300,
   "buckets": {
@@ -33,6 +40,12 @@
       "LLY",
       "MRK",
       "UNH"
+    ],
+    "industrials_core": [
+      "CAT",
+      "GE",
+      "HON",
+      "LMT"
     ],
     "us_macro": [
       "ARKK",
