@@ -14,6 +14,7 @@ OPTIONAL_NEWS_BUCKETS = (
     "healthcare_core",
     "industrials_core",
     "consumer_defensive_core",
+    "communication_services_core",
     "asia_semis",
     "asia_macro",
 )

@@ -187,6 +187,7 @@ def main() -> int:
         "Healthcare": "XLV",
         "Industrials": "XLI",
         "Consumer Defensive": "XLP",
+        "Communication Services": "XLC",
     }
 
     rows: list[dict] = []

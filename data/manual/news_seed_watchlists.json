@@ -7,12 +7,13 @@
     "core_semis": 1200,
     "healthcare_core": 300,
     "industrials_core": 300,
+    "consumer_defensive_core": 300,
+    "communication_services_core": 300,
     "us_macro": 500,
     "asia_semis": 300,
     "asia_macro": 200,
     "sector_context": 200,
-    "event_reserve": 100,
-    "consumer_defensive_core": 300
+    "event_reserve": 100
   },
   "bucket_request_overrides": {
     "industrials_core": {
@@ -52,6 +53,11 @@
       "COST",
       "PG",
       "WMT"
+    ],
+    "communication_services_core": [
+      "GOOGL",
+      "META",
+      "NFLX"
     ],
     "us_macro": [
       "ARKK",

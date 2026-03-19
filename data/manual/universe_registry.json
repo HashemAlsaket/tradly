@@ -288,11 +288,15 @@
       "market_data": true,
       "model": false,
       "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "Communication Services",
       "industry": "Telecom Services",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "cable_broadband",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
@@ -474,11 +478,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Communication Services",
       "industry": "Entertainment",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "media_entertainment"
       ],
       "news_buckets": []
     },
@@ -671,14 +678,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Communication Services",
       "industry": "Internet Content & Information",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "internet_platforms"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "communication_services_core"
+      ]
     },
     {
       "symbol": "GS",
@@ -1028,14 +1040,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Communication Services",
       "industry": "Internet Content & Information",
       "halal_flag": "review_required",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "internet_platforms"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "communication_services_core"
+      ]
     },
     {
       "symbol": "MRK",
@@ -1144,14 +1161,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": false,
       "sector": "Communication Services",
       "industry": "Entertainment",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "streaming_media"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "communication_services_core"
+      ]
     },
     {
       "symbol": "NKE",
@@ -1792,11 +1814,13 @@
       "market_data": true,
       "model": false,
       "direct_news": true,
+      "portfolio_eligible": false,
       "sector": "ETF",
       "industry": "Communication Services ETF",
       "halal_flag": "investable",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"

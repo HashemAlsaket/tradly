@@ -5,8 +5,8 @@
     "active_symbols": 55,
     "market_data_symbols": 85,
     "model_symbols": 55,
-    "direct_news_symbols": 53,
-    "portfolio_eligible_symbols": 13
+    "direct_news_symbols": 56,
+    "portfolio_eligible_symbols": 15
   },
   "scopes": {
     "all_symbols": [
@@ -345,6 +345,7 @@
       "FXI",
       "GE",
       "GLD",
+      "GOOGL",
       "HON",
       "IEF",
       "INTC",
@@ -355,8 +356,10 @@
       "LLY",
       "LMT",
       "LRCX",
+      "META",
       "MRK",
       "MU",
+      "NFLX",
       "NVDA",
       "NVTS",
       "PG",
@@ -390,10 +393,12 @@
       "COST",
       "DHR",
       "GE",
+      "GOOGL",
       "HON",
       "ISRG",
       "JNJ",
       "LLY",
+      "META",
       "MRK",
       "PG",
       "TMO",
@@ -567,6 +572,9 @@
         "SPY",
         "VTI"
       ],
+      "cable_broadband": [
+        "CHTR"
+      ],
       "core": [
         "MU",
         "NVDA",
@@ -601,6 +609,10 @@
         "CL",
         "PG"
       ],
+      "internet_platforms": [
+        "GOOGL",
+        "META"
+      ],
       "macro_context": [
         "ARKK",
         "DIA",
@@ -621,6 +633,9 @@
         "CVS",
         "UNH"
       ],
+      "media_entertainment": [
+        "DIS"
+      ],
       "membership_retail": [
         "COST",
         "WMT"
@@ -632,6 +647,7 @@
         "MRK"
       ],
       "probationary_market_data_only": [
+        "CHTR",
         "CL",
         "CVS",
         "GILD",
@@ -745,6 +761,7 @@
         "XOM"
       ],
       "sector_proxy": [
+        "XLC",
         "XLI",
         "XLP",
         "XLV"
@@ -767,10 +784,14 @@
       ],
       "staples_beverages": [
         "PEP"
+      ],
+      "streaming_media": [
+        "NFLX"
       ]
     },
     "by_onboarding_stage": {
       "market_data_only": [
+        "CHTR",
         "CL",
         "CVS",
         "GILD",
@@ -781,6 +802,7 @@
       "modeled": [
         "DE",
         "DHR",
+        "DIS",
         "ISRG",
         "PEP",
         "TMO"
@@ -789,11 +811,14 @@
         "CAT",
         "COST",
         "GE",
+        "GOOGL",
         "HON",
         "JNJ",
         "LLY",
         "LMT",
+        "META",
         "MRK",
+        "NFLX",
         "PG",
         "UNH",
         "WMT"
@@ -830,6 +855,11 @@
         "COST",
         "PG",
         "WMT"
+      ],
+      "communication_services_core": [
+        "GOOGL",
+        "META",
+        "NFLX"
       ],
       "us_macro": [
         "ARKK",

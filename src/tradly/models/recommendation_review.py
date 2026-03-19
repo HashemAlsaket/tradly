@@ -49,6 +49,20 @@ def _consumer_defensive_subtype(metadata: dict[str, Any]) -> str:
     return "general_consumer_defensive"
 
 
+def _communication_services_subtype(metadata: dict[str, Any]) -> str:
+    roles = {str(role).strip().lower() for role in metadata.get("roles", []) if str(role).strip()}
+    industry = str(metadata.get("industry", "")).strip().lower()
+    if "internet_platforms" in roles or "internet content" in industry:
+        return "internet_platforms"
+    if "streaming_media" in roles or "streaming" in industry:
+        return "streaming_media"
+    if "media_entertainment" in roles or "entertainment" in industry:
+        return "media_entertainment"
+    if "cable_broadband" in roles or "telecom services" in industry or "broadband" in industry:
+        return "cable_broadband"
+    return "general_communication_services"
+
+
 def _market_stress_level(market_row: dict[str, Any] | None) -> str:
     if not isinstance(market_row, dict):
         return "low"
@@ -217,6 +231,26 @@ def build_review_rows(
                     reason_code = "consumer_defensive_actionable"
             elif disposition == "review_required" and onboarding_stage in {"modeled", "modeled_with_direct_news"}:
                 reason_code = "consumer_defensive_probationary_modeled"
+        elif sector == "Communication Services":
+            sector_subtype = _communication_services_subtype(metadata)
+            if direct_news and symbol_news_coverage in {"thin_evidence", "insufficient_evidence"}:
+                if disposition == "promote":
+                    disposition = "review_required"
+                if reason_code in {"regime_aligned_actionable", "mixed_strong_actionable"}:
+                    reason_code = "communication_services_thin_evidence"
+            elif disposition == "promote":
+                if sector_subtype == "internet_platforms":
+                    reason_code = "communication_services_platform_actionable"
+                elif sector_subtype == "streaming_media":
+                    reason_code = "communication_services_streaming_actionable"
+                elif sector_subtype == "media_entertainment":
+                    reason_code = "communication_services_media_actionable"
+                elif sector_subtype == "cable_broadband":
+                    reason_code = "communication_services_cable_actionable"
+                else:
+                    reason_code = "communication_services_actionable"
+            elif disposition == "review_required" and onboarding_stage in {"modeled", "modeled_with_direct_news"}:
+                reason_code = "communication_services_probationary_modeled"
 
         event_action_bias = str(event_risk_row.get("action_bias", "")).strip().lower()
         event_reaction_state = str(event_risk_row.get("reaction_state", "")).strip().lower()
@@ -263,6 +297,8 @@ def build_review_rows(
                 "industrials_probationary_modeled",
                 "consumer_defensive_thin_evidence",
                 "consumer_defensive_probationary_modeled",
+                "communication_services_thin_evidence",
+                "communication_services_probationary_modeled",
             }:
                 confidence = int(row.get("confidence_score", 0) or 0)
                 if market_stress == "high" and confidence >= 70 and str(row.get("recommended_horizon", "")).strip() in {"1to2w", "2to6w"}:

@@ -111,6 +111,30 @@ class UniverseOnboardingAuditTest(unittest.TestCase):
 
         self.assertEqual(checks["sector_proxy_present"]["status"], "pass")
 
+    def test_communication_services_sector_proxy_is_checked_with_xlc(self) -> None:
+        flags = _expected_flags({"onboarding_stage": "modeled_with_direct_news", "portfolio_eligible": True})
+        checks = _build_checks(
+            symbol="META",
+            sector_proxy="XLC",
+            flags=flags,
+            instrument_symbols={"META"},
+            market_data_symbols={"META", "XLC"},
+            model_symbols={"META"},
+            direct_news_symbols={"META"},
+            portfolio_symbols={"META"},
+            daily_dates={("META", "2026-03-18")},
+            latest_daily_market_date="2026-03-18",
+            intraday_symbols={"META"},
+            watermark_symbols=set(),
+            snapshot_symbols={"META"},
+            symbol_movement_symbols={"META"},
+            recommendation_symbols={"META"},
+            symbol_news_symbols={"META"},
+            portfolio_policy_symbols={"META"},
+        )
+
+        self.assertEqual(checks["sector_proxy_present"]["status"], "pass")
+
 
 if __name__ == "__main__":
     unittest.main()

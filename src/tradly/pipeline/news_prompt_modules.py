@@ -38,6 +38,11 @@ SECTOR_MODULE_RULES = {
         "Prefer concise tags such as `pricing_power`, `consumer_staples_demand`, `membership_traffic`, `margin_input_cost`, `defensive_rotation`, `private_label_mix`.",
         "When a consumer defensive article is mainly about staples demand, discount retail traffic, or household and personal care resilience, keep the impact scope as `consumer_defensive` or `symbol_specific` rather than forcing it into broad market buckets.",
     ],
+    "communication_services": [
+        "For communication services articles, classify the impact using communication-services-aware thesis tags when applicable.",
+        "Prefer concise tags such as `digital_ad_demand`, `platform_monetization`, `streaming_engagement`, `subscriber_churn`, `content_pipeline`, `regulatory_platform_risk`, `ad_pricing_mix`.",
+        "When a communication services article is mainly about internet platforms, streaming media, entertainment, or cable broadband, keep the impact scope as `communication_services` or `symbol_specific` rather than forcing it into broad market buckets.",
+    ],
 }
 
 

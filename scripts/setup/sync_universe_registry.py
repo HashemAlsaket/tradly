@@ -13,6 +13,7 @@ BUCKET_ORDER = [
     "healthcare_core",
     "industrials_core",
     "consumer_defensive_core",
+    "communication_services_core",
     "us_macro",
     "asia_semis",
     "asia_macro",
@@ -24,6 +25,7 @@ DEFAULT_BUCKET_CAPS = {
     "healthcare_core": 300,
     "industrials_core": 300,
     "consumer_defensive_core": 300,
+    "communication_services_core": 300,
 }
 
 
