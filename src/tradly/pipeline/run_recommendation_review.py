@@ -56,7 +56,20 @@ def _quality_audit(rows: list[dict]) -> dict[str, object]:
     invalid_dispositions = 0
     invalid_buckets = 0
     valid_dispositions = {"promote", "review_required", "watch", "defer", "blocked"}
-    valid_buckets = {"top_longs", "top_shorts", "top_ideas", "contrarian_review", "manual_review", "watchlist", "deferred", "blocked"}
+    valid_buckets = {
+        "top_longs",
+        "top_shorts",
+        "top_ideas",
+        "contrarian_review",
+        "contrarian_rebound",
+        "review_high_priority",
+        "manual_review",
+        "watch_event_damaged",
+        "watch_tape_blocked",
+        "watch_needs_confirmation",
+        "deferred",
+        "blocked",
+    }
     for row in rows:
         if str(row.get("review_disposition", "")).strip() not in valid_dispositions:
             invalid_dispositions += 1
@@ -133,26 +146,42 @@ def main() -> int:
     time_ctx = get_time_context()
 
     recommendation_payload = _load_latest_json(runs_dir, "*/recommendation_v1.json")
+    event_risk_payload = _load_latest_json(runs_dir, "*/event_risk_v1.json")
     if not recommendation_payload:
         print("recommendation_review_v1_failed:recommendation_missing")
         return 1
-
-    alignment = assess_artifact_alignment(
-        artifact_name="recommendation_v1",
-        payload=recommendation_payload,
-        now_utc=time_ctx.now_utc,
-        max_age=MAX_UPSTREAM_AGE,
-    )
-    if not alignment.valid:
-        print("recommendation_review_v1_failed:stale_recommendation_artifact")
+    if not event_risk_payload:
+        print("recommendation_review_v1_failed:event_risk_missing")
         return 2
+
+    alignments = {
+        "recommendation_v1": assess_artifact_alignment(
+            artifact_name="recommendation_v1",
+            payload=recommendation_payload,
+            now_utc=time_ctx.now_utc,
+            max_age=MAX_UPSTREAM_AGE,
+        ),
+        "event_risk_v1": assess_artifact_alignment(
+            artifact_name="event_risk_v1",
+            payload=event_risk_payload,
+            now_utc=time_ctx.now_utc,
+            max_age=MAX_UPSTREAM_AGE,
+        ),
+    }
+    stale = [name for name, alignment in alignments.items() if not alignment.valid]
+    if stale:
+        print(f"recommendation_review_v1_failed:stale_upstream:{','.join(sorted(stale))}")
+        return 3
 
     recommendation_rows = recommendation_payload.get("rows", [])
     if not isinstance(recommendation_rows, list) or not recommendation_rows:
         print("recommendation_review_v1_failed:recommendation_rows_missing")
-        return 3
+        return 4
 
     intraday_actionable, intraday_summary = _intraday_actionable(repo_root=repo_root, now_utc=time_ctx.now_utc)
+    market_payload = _load_latest_json(runs_dir, "*/market_regime_v1.json")
+    market_rows = market_payload.get("rows", []) if isinstance(market_payload, dict) else []
+    market_row = market_rows[0] if isinstance(market_rows, list) and market_rows and isinstance(market_rows[0], dict) else {}
     try:
         universe_registry = load_normalized_registry(repo_root / "data" / "manual" / "universe_registry.json")
     except Exception:
@@ -168,12 +197,19 @@ def main() -> int:
         for row in symbol_news_payload.get("rows", [])
         if isinstance(row, dict) and str(row.get("scope_id", "")).strip()
     }
+    event_risk_rows_by_symbol = {
+        str(row.get("scope_id", "")).strip().upper(): row
+        for row in event_risk_payload.get("rows", [])
+        if isinstance(row, dict) and str(row.get("scope_id", "")).strip()
+    }
     rows = build_review_rows(
         recommendation_rows=recommendation_rows,
         now_utc=time_ctx.now_utc,
         intraday_actionable=intraday_actionable,
         symbol_metadata=symbol_metadata,
         symbol_news_rows_by_symbol=symbol_news_rows_by_symbol,
+        event_risk_rows_by_symbol=event_risk_rows_by_symbol,
+        market_row=market_row,
     )
     quality_audit = _quality_audit(rows)
     counts: dict[str, int] = {}
@@ -201,13 +237,25 @@ def main() -> int:
             "upstream_model": "recommendation_v1",
             "recommendation_count": len(recommendation_rows),
             "recommendation_run_timestamp_utc": str(recommendation_payload.get("run_timestamp_utc", "")),
+            "event_risk_run_timestamp_utc": str(event_risk_payload.get("run_timestamp_utc", "")),
             "intraday_actionable": intraday_actionable,
             "intraday_summary": intraday_summary,
+            "event_risk_row_count": len(event_risk_rows_by_symbol),
+            "market_signal_direction": market_row.get("signal_direction"),
+            "market_confidence_score": market_row.get("confidence_score"),
         },
         "input_audit": {
             "status": _input_status(recommendation_payload, rows),
             "upstream_input_status": str((recommendation_payload.get("input_audit", {}) or {}).get("status", "")),
             "upstream_quality_status": str((recommendation_payload.get("quality_audit", {}) or {}).get("status", "")),
+            "aligned_artifacts": {
+                name: {
+                    "run_timestamp_utc": alignment.run_timestamp_utc,
+                    "age_sec": alignment.age_sec,
+                    "valid": alignment.valid,
+                }
+                for name, alignment in alignments.items()
+            },
         },
         "quality_audit": quality_audit,
         "review_disposition_counts": counts,

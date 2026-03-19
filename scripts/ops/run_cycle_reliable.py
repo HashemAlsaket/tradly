@@ -9,6 +9,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from tradly.services.time_context import NOW_UTC_OVERRIDE_ENV
+
 
 POSTFLIGHT_WRITE_MAX_AGE_SEC = 120
 
@@ -102,12 +104,14 @@ def _validate_postflight_snapshot(
     if freshness_as_of < started_at:
         return None, "postflight_freshness_not_advanced"
 
-    write_age_sec = int((now_utc - written_at).total_seconds())
-    freshness_age_sec = int((now_utc - freshness_as_of).total_seconds())
-    if write_age_sec > max_age_sec:
-        return None, "postflight_snapshot_timestamp_stale"
-    if freshness_age_sec > max_age_sec:
-        return None, "postflight_freshness_timestamp_stale"
+    frozen_time_run = bool(os.getenv(NOW_UTC_OVERRIDE_ENV, "").strip())
+    if not frozen_time_run:
+        write_age_sec = int((now_utc - written_at).total_seconds())
+        freshness_age_sec = int((now_utc - freshness_as_of).total_seconds())
+        if write_age_sec > max_age_sec:
+            return None, "postflight_snapshot_timestamp_stale"
+        if freshness_age_sec > max_age_sec:
+            return None, "postflight_freshness_timestamp_stale"
     if written_at > ended_at.astimezone(timezone.utc) and int((written_at - ended_at.astimezone(timezone.utc)).total_seconds()) > max_age_sec:
         return None, "postflight_snapshot_after_run_window"
     if freshness_as_of > ended_at.astimezone(timezone.utc) and int((freshness_as_of - ended_at.astimezone(timezone.utc)).total_seconds()) > max_age_sec:
@@ -156,6 +160,7 @@ def main() -> int:
     env["PYTHONPATH"] = "src" if not existing_pythonpath else f"src:{existing_pythonpath}"
 
     started_at = datetime.now(timezone.utc)
+    env.setdefault(NOW_UTC_OVERRIDE_ENV, started_at.isoformat())
     lock_fh = lock_path.open("w", encoding="utf-8")
     try:
         try:

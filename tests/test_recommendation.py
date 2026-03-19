@@ -193,6 +193,135 @@ class RecommendationTests(unittest.TestCase):
         self.assertEqual(rows[0]["scope_id"], "NVDA")
         self.assertEqual(rows[0]["symbol"], "NVDA")
 
+    def test_build_recommendation_rows_compresses_offhours_tactical_confidence(self) -> None:
+        rows = build_recommendation_rows(
+            ensemble_rows=[
+                {
+                    "scope_id": "NKE",
+                    "confidence_score": 84,
+                    "horizon_summary": {
+                        "1to3d": {
+                            "state": "actionable",
+                            "signal_direction": "bearish",
+                            "confidence_score": 84,
+                            "confidence_label": "high",
+                            "coverage_state": "sufficient_evidence",
+                            "score_normalized": -76.9435,
+                            "why_code": [
+                                "market_context_headwind",
+                                "sector_context_headwind",
+                                "symbol_movement_supports_bearish",
+                                "sector_news_supportive",
+                            ],
+                            "execution_ready": True,
+                        },
+                        "1to2w": {
+                            "state": "actionable",
+                            "signal_direction": "bearish",
+                            "confidence_score": 55,
+                            "confidence_label": "medium",
+                            "coverage_state": "sufficient_evidence",
+                            "score_normalized": -22.3877,
+                            "why_code": [
+                                "market_context_headwind",
+                                "sector_context_headwind",
+                                "sector_news_supportive",
+                                "component_conflict_high",
+                            ],
+                            "execution_ready": True,
+                        },
+                    },
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 4, 55, tzinfo=timezone.utc),
+        )
+        self.assertEqual(rows[0]["recommended_action"], "Sell/Trim")
+        self.assertEqual(rows[0]["actionability_class"], "tactical_offhours_fragile")
+        self.assertLess(rows[0]["confidence_score"], 84)
+        self.assertEqual(rows[0]["base_confidence_score"], 84)
+        self.assertLess(rows[0]["confidence_adjustment"], 0)
+
+    def test_build_recommendation_rows_adds_spread_to_aligned_shorts_from_cross_horizon_reinforcement(self) -> None:
+        rows = build_recommendation_rows(
+            ensemble_rows=[
+                {
+                    "scope_id": "GS",
+                    "confidence_score": 55,
+                    "horizon_summary": {
+                        "1to3d": {
+                            "state": "research_only",
+                            "signal_direction": "bearish",
+                            "confidence_score": 70,
+                            "confidence_label": "high",
+                            "coverage_state": "sufficient_evidence",
+                            "score_normalized": -74.8616,
+                            "why_code": [
+                                "market_context_headwind",
+                                "sector_context_headwind",
+                                "symbol_movement_supports_bearish",
+                                "upstream_lane_thin",
+                            ],
+                            "execution_ready": True,
+                        },
+                        "2to6w": {
+                            "state": "actionable",
+                            "signal_direction": "bearish",
+                            "confidence_score": 55,
+                            "confidence_label": "medium",
+                            "coverage_state": "sufficient_evidence",
+                            "score_normalized": -52.2929,
+                            "why_code": [
+                                "market_context_headwind",
+                                "sector_context_headwind",
+                                "sector_news_headwind",
+                            ],
+                            "execution_ready": True,
+                        },
+                    },
+                },
+                {
+                    "scope_id": "MA",
+                    "confidence_score": 55,
+                    "horizon_summary": {
+                        "1to3d": {
+                            "state": "research_only",
+                            "signal_direction": "bearish",
+                            "confidence_score": 70,
+                            "confidence_label": "high",
+                            "coverage_state": "sufficient_evidence",
+                            "score_normalized": -52.1958,
+                            "why_code": [
+                                "market_context_headwind",
+                                "sector_context_headwind",
+                                "symbol_movement_supports_bearish",
+                                "upstream_lane_thin",
+                            ],
+                            "execution_ready": True,
+                        },
+                        "2to6w": {
+                            "state": "actionable",
+                            "signal_direction": "bearish",
+                            "confidence_score": 55,
+                            "confidence_label": "medium",
+                            "coverage_state": "sufficient_evidence",
+                            "score_normalized": -52.2929,
+                            "why_code": [
+                                "market_context_headwind",
+                                "sector_context_headwind",
+                                "sector_news_headwind",
+                            ],
+                            "execution_ready": True,
+                        },
+                    },
+                },
+            ],
+            now_utc=datetime(2026, 3, 19, 4, 55, tzinfo=timezone.utc),
+        )
+        by_scope = {row["scope_id"]: row for row in rows}
+        self.assertGreater(by_scope["GS"]["confidence_score"], by_scope["MA"]["confidence_score"])
+        self.assertGreater(by_scope["GS"]["confidence_score"], 55)
+        self.assertGreater(by_scope["MA"]["confidence_score"], 55)
+
 
 if __name__ == "__main__":
     unittest.main()

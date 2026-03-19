@@ -6,6 +6,7 @@ from typing import Any
 
 PROMOTE_CONFIDENCE_MIN = 60
 MIXED_STRONG_PROMOTE_CONFIDENCE_MIN = 72
+MIXED_WEAK_PROMOTE_CONFIDENCE_MIN = 66
 
 
 def _healthcare_subtype(metadata: dict[str, Any]) -> str:
@@ -18,6 +19,28 @@ def _healthcare_subtype(metadata: dict[str, Any]) -> str:
     if "pharma_defensive" in roles or "drug manufacturers" in industry or "biotech" in industry:
         return "pharma_defensive"
     return "general_healthcare"
+
+
+def _market_stress_level(market_row: dict[str, Any] | None) -> str:
+    if not isinstance(market_row, dict):
+        return "low"
+    signal = str(market_row.get("signal_direction", "")).strip().lower()
+    confidence = int(market_row.get("confidence_score", 0) or 0)
+    evidence = market_row.get("evidence", {}) if isinstance(market_row.get("evidence"), dict) else {}
+    macro_hostility = evidence.get("macro_hostility", {}) if isinstance(evidence.get("macro_hostility"), dict) else {}
+    macro_state = str(macro_hostility.get("macro_state", "")).strip().lower()
+    why_codes = {str(code).strip().lower() for code in market_row.get("why_code", []) if str(code).strip()}
+
+    if signal == "bearish" and confidence >= 70 and (
+        macro_state in {"risk_off", "macro_unstable"}
+        or {"vix_elevated", "macro_rates_pressure", "macro_energy_stress"} & why_codes
+    ):
+        return "high"
+    if signal == "bearish" and confidence >= 60:
+        return "medium"
+    if signal == "neutral" and confidence >= 65 and macro_state in {"risk_off", "macro_unstable"}:
+        return "medium"
+    return "low"
 
 
 def _review_disposition(row: dict[str, Any], *, intraday_actionable: bool) -> tuple[str, str]:
@@ -43,6 +66,12 @@ def _review_disposition(row: dict[str, Any], *, intraday_actionable: bool) -> tu
         if regime_alignment == "mixed":
             if evidence_balance_class == "mixed_strong" and confidence >= MIXED_STRONG_PROMOTE_CONFIDENCE_MIN:
                 return "promote", "mixed_strong_actionable"
+            if (
+                evidence_balance_class == "mixed_weak"
+                and recommended_horizon in {"1to2w", "2to6w"}
+                and confidence >= MIXED_WEAK_PROMOTE_CONFIDENCE_MIN
+            ):
+                return "promote", "mixed_cautious_actionable"
             return "review_required", "mixed_setup"
         if confidence < PROMOTE_CONFIDENCE_MIN:
             return "review_required", "confidence_below_promote_threshold"
@@ -50,19 +79,25 @@ def _review_disposition(row: dict[str, Any], *, intraday_actionable: bool) -> tu
     return "watch", "unclassified_action"
 
 
-def _review_bucket(row: dict[str, Any], disposition: str) -> str:
+def _review_bucket(row: dict[str, Any], disposition: str, reason_code: str) -> str:
     action = str(row.get("recommended_action", "")).strip()
     if disposition == "promote":
         return "top_longs" if action == "Buy" else "top_shorts" if action == "Sell/Trim" else "top_ideas"
     if disposition == "review_required":
         if str(row.get("regime_alignment", "")).strip().lower() == "contrarian":
             return "contrarian_rebound" if action == "Buy" else "contrarian_review"
+        if action == "Buy" and int(row.get("confidence_score", 0) or 0) >= 70:
+            return "review_high_priority"
         return "manual_review"
     if disposition == "defer":
         return "deferred"
     if disposition == "blocked":
         return "blocked"
-    return "watchlist"
+    if reason_code in {"event_buy_capped_to_watch", "event_reaction_damage", "event_reaction_caution"}:
+        return "watch_event_damaged"
+    if reason_code == "market_stress_watch":
+        return "watch_tape_blocked"
+    return "watch_needs_confirmation"
 
 
 def build_review_rows(
@@ -72,10 +107,14 @@ def build_review_rows(
     intraday_actionable: bool = True,
     symbol_metadata: dict[str, dict[str, Any]] | None = None,
     symbol_news_rows_by_symbol: dict[str, dict[str, Any]] | None = None,
+    event_risk_rows_by_symbol: dict[str, dict[str, Any]] | None = None,
+    market_row: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     symbol_metadata = symbol_metadata or {}
     symbol_news_rows_by_symbol = symbol_news_rows_by_symbol or {}
+    event_risk_rows_by_symbol = event_risk_rows_by_symbol or {}
+    market_stress = _market_stress_level(market_row)
     for row in recommendation_rows:
         if not isinstance(row, dict):
             continue
@@ -85,6 +124,7 @@ def build_review_rows(
         disposition, reason_code = _review_disposition(row, intraday_actionable=intraday_actionable)
         metadata = symbol_metadata.get(scope_id, {})
         symbol_news_row = symbol_news_rows_by_symbol.get(scope_id, {})
+        event_risk_row = event_risk_rows_by_symbol.get(scope_id, {})
         sector = str(metadata.get("sector", "")).strip()
         direct_news = bool(metadata.get("direct_news", False))
         onboarding_stage = str(metadata.get("onboarding_stage", "")).strip()
@@ -110,11 +150,62 @@ def build_review_rows(
             elif disposition == "review_required" and onboarding_stage == "modeled":
                 reason_code = "healthcare_probationary_modeled"
 
-        review_bucket = _review_bucket(row, disposition)
+        event_action_bias = str(event_risk_row.get("action_bias", "")).strip().lower()
+        event_reaction_state = str(event_risk_row.get("reaction_state", "")).strip().lower()
+        event_reaction_severity = str(event_risk_row.get("reaction_severity", "")).strip().lower()
+        event_hard_cap = bool(event_risk_row.get("hard_cap_buy_to_watch", False))
+        if bool(event_risk_row.get("event_active", False)):
+            if event_hard_cap and str(row.get("recommended_action", "")).strip() == "Buy":
+                disposition = "watch"
+                reason_code = "event_buy_capped_to_watch"
+            elif event_action_bias == "downgrade" and event_reaction_severity == "high":
+                if disposition == "promote":
+                    disposition = "review_required"
+                if reason_code not in {"event_buy_capped_to_watch"}:
+                    reason_code = "event_reaction_damage"
+            elif event_action_bias == "downgrade" and event_reaction_severity == "medium":
+                if disposition == "promote":
+                    disposition = "review_required"
+                if reason_code not in {"event_buy_capped_to_watch", "event_reaction_damage"}:
+                    reason_code = "event_reaction_caution"
+
+        recommended_action = str(row.get("recommended_action", "")).strip()
+        recommendation_class = str(row.get("recommendation_class", "")).strip().lower()
+        if recommended_action == "Buy" and disposition == "promote":
+            if market_stress == "high":
+                confidence = int(row.get("confidence_score", 0) or 0)
+                if (
+                    recommendation_class in {"mixed_strong_long", "mixed_weak_long", "aligned_long"}
+                    and confidence >= 70
+                ):
+                    reason_code = "risk_off_survivor"
+                else:
+                    disposition = "watch"
+                    reason_code = "market_stress_watch"
+            elif market_stress == "medium" and int(row.get("confidence_score", 0) or 0) < 68:
+                disposition = "watch"
+                reason_code = "market_stress_watch"
+        elif recommended_action == "Buy" and disposition == "review_required" and market_stress in {"medium", "high"}:
+            if reason_code not in {
+                "event_buy_capped_to_watch",
+                "event_reaction_damage",
+                "event_reaction_caution",
+                "healthcare_thin_evidence",
+            }:
+                confidence = int(row.get("confidence_score", 0) or 0)
+                if market_stress == "high" and confidence >= 70 and str(row.get("recommended_horizon", "")).strip() in {"1to2w", "2to6w"}:
+                    disposition = "promote"
+                    reason_code = "risk_off_survivor"
+                else:
+                    disposition = "watch"
+                    reason_code = "market_stress_watch"
+
+        review_bucket = _review_bucket(row, disposition, reason_code)
         rows.append(
             {
                 "model_id": "recommendation_review_v1",
                 "scope_id": scope_id,
+                "symbol": scope_id,
                 "recommended_action": row.get("recommended_action"),
                 "recommended_horizon": row.get("recommended_horizon"),
                 "recommendation_class": row.get("recommendation_class"),
@@ -127,6 +218,10 @@ def build_review_rows(
                 "review_disposition": disposition,
                 "review_bucket": review_bucket,
                 "review_reason_code": reason_code,
+                "event_active": bool(event_risk_row.get("event_active", False)),
+                "event_reaction_state": event_reaction_state,
+                "event_reaction_severity": event_reaction_severity,
+                "market_stress_level": market_stress,
                 "sector": sector,
                 "sector_subtype": healthcare_subtype,
                 "primary_reason_code": row.get("primary_reason_code"),

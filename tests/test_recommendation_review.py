@@ -69,8 +69,29 @@ class RecommendationReviewTests(unittest.TestCase):
         self.assertEqual(by_scope["NVDA"]["review_bucket"], "contrarian_rebound")
         self.assertEqual(by_scope["QQQ"]["review_disposition"], "defer")
         self.assertEqual(by_scope["QQQ"]["review_bucket"], "deferred")
-        self.assertEqual(by_scope["NVDA_MIXED"]["review_disposition"], "review_required")
-        self.assertEqual(by_scope["NVDA_MIXED"]["review_bucket"], "manual_review")
+        self.assertEqual(by_scope["NVDA_MIXED"]["review_disposition"], "promote")
+        self.assertEqual(by_scope["NVDA_MIXED"]["review_bucket"], "top_longs")
+
+    def test_build_review_rows_promotes_mixed_weak_high_confidence_swing_long(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "AMD",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "mixed_weak_long",
+                    "evidence_balance_class": "mixed_weak",
+                    "regime_alignment": "mixed",
+                    "signal_direction": "bullish",
+                    "confidence_score": 67,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 15, 20, 0, 0),
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "mixed_cautious_actionable")
 
     def test_build_review_rows_promotes_mixed_strong_high_confidence_long(self) -> None:
         rows = build_review_rows(
@@ -179,6 +200,121 @@ class RecommendationReviewTests(unittest.TestCase):
         self.assertEqual(rows[0]["review_disposition"], "promote")
         self.assertEqual(rows[0]["review_reason_code"], "healthcare_tools_devices_actionable")
         self.assertEqual(rows[0]["sector_subtype"], "quality_tools_devices")
+
+    def test_event_risk_caps_buy_to_watch(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "MU",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to3d",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 81,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 2, 0, 0),
+            event_risk_rows_by_symbol={
+                "MU": {
+                    "event_active": True,
+                    "reaction_state": "beat_but_rejected",
+                    "reaction_severity": "high",
+                    "action_bias": "downgrade",
+                    "hard_cap_buy_to_watch": True,
+                }
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "watch")
+        self.assertEqual(rows[0]["review_reason_code"], "event_buy_capped_to_watch")
+        self.assertEqual(rows[0]["event_reaction_state"], "beat_but_rejected")
+        self.assertEqual(rows[0]["review_bucket"], "watch_event_damaged")
+
+    def test_market_stress_turns_marginal_promote_into_review_required(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "CVX",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 68,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 3, 0, 0),
+            market_row={
+                "signal_direction": "bearish",
+                "confidence_score": 73,
+                "why_code": ["vix_elevated", "macro_rates_pressure", "macro_energy_stress"],
+                "evidence": {"macro_hostility": {"macro_state": "risk_off"}},
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "watch")
+        self.assertEqual(rows[0]["review_reason_code"], "market_stress_watch")
+        self.assertEqual(rows[0]["market_stress_level"], "high")
+        self.assertEqual(rows[0]["review_bucket"], "watch_tape_blocked")
+
+    def test_market_stress_keeps_strong_survivor_promoted(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "NVDA",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "2to6w",
+                    "recommendation_class": "mixed_strong_long",
+                    "evidence_balance_class": "mixed_strong",
+                    "regime_alignment": "mixed",
+                    "signal_direction": "bullish",
+                    "confidence_score": 78,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 3, 0, 0),
+            market_row={
+                "signal_direction": "bearish",
+                "confidence_score": 73,
+                "why_code": ["vix_elevated", "macro_rates_pressure", "macro_energy_stress"],
+                "evidence": {"macro_hostility": {"macro_state": "risk_off"}},
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "risk_off_survivor")
+
+    def test_market_stress_can_promote_high_confidence_mixed_review_required_buy(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "NVDA",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "2to6w",
+                    "recommendation_class": "mixed_weak_long",
+                    "evidence_balance_class": "mixed_weak",
+                    "regime_alignment": "mixed",
+                    "signal_direction": "bullish",
+                    "confidence_score": 72,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 3, 0, 0),
+            market_row={
+                "signal_direction": "bearish",
+                "confidence_score": 79,
+                "why_code": ["vix_elevated", "macro_rates_pressure", "macro_energy_stress"],
+                "evidence": {"macro_hostility": {"macro_state": "risk_off"}},
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "risk_off_survivor")
 
 
 if __name__ == "__main__":
