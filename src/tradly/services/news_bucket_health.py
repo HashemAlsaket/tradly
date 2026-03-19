@@ -13,6 +13,7 @@ REQUIRED_NEWS_BUCKETS = (
 OPTIONAL_NEWS_BUCKETS = (
     "healthcare_core",
     "industrials_core",
+    "consumer_defensive_core",
     "asia_semis",
     "asia_macro",
 )

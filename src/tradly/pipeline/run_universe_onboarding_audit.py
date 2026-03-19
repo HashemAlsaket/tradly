@@ -186,6 +186,7 @@ def main() -> int:
     sector_proxy_checks = {
         "Healthcare": "XLV",
         "Industrials": "XLI",
+        "Consumer Defensive": "XLP",
     }
 
     rows: list[dict] = []

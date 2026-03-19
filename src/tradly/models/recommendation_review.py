@@ -35,6 +35,20 @@ def _industrials_subtype(metadata: dict[str, Any]) -> str:
     return "general_industrials"
 
 
+def _consumer_defensive_subtype(metadata: dict[str, Any]) -> str:
+    roles = {str(role).strip().lower() for role in metadata.get("roles", []) if str(role).strip()}
+    industry = str(metadata.get("industry", "")).strip().lower()
+    if "membership_retail" in roles or "discount stores" in industry:
+        return "membership_retail"
+    if "household_personal_care" in roles or "household" in industry or "personal products" in industry:
+        return "household_personal_care"
+    if "staples_beverages" in roles or "beverages" in industry:
+        return "staples_beverages"
+    if "defensive_brand_staples" in roles or "packaged foods" in industry or "confectioners" in industry:
+        return "defensive_brand_staples"
+    return "general_consumer_defensive"
+
+
 def _market_stress_level(market_row: dict[str, Any] | None) -> str:
     if not isinstance(market_row, dict):
         return "low"
@@ -183,6 +197,26 @@ def build_review_rows(
                     reason_code = "industrials_actionable"
             elif disposition == "review_required" and onboarding_stage in {"modeled", "modeled_with_direct_news"}:
                 reason_code = "industrials_probationary_modeled"
+        elif sector == "Consumer Defensive":
+            sector_subtype = _consumer_defensive_subtype(metadata)
+            if direct_news and symbol_news_coverage in {"thin_evidence", "insufficient_evidence"}:
+                if disposition == "promote":
+                    disposition = "review_required"
+                if reason_code in {"regime_aligned_actionable", "mixed_strong_actionable"}:
+                    reason_code = "consumer_defensive_thin_evidence"
+            elif disposition == "promote":
+                if sector_subtype == "membership_retail":
+                    reason_code = "consumer_defensive_membership_actionable"
+                elif sector_subtype == "household_personal_care":
+                    reason_code = "consumer_defensive_household_actionable"
+                elif sector_subtype == "staples_beverages":
+                    reason_code = "consumer_defensive_beverages_actionable"
+                elif sector_subtype == "defensive_brand_staples":
+                    reason_code = "consumer_defensive_staples_actionable"
+                else:
+                    reason_code = "consumer_defensive_actionable"
+            elif disposition == "review_required" and onboarding_stage in {"modeled", "modeled_with_direct_news"}:
+                reason_code = "consumer_defensive_probationary_modeled"
 
         event_action_bias = str(event_risk_row.get("action_bias", "")).strip().lower()
         event_reaction_state = str(event_risk_row.get("reaction_state", "")).strip().lower()
@@ -227,6 +261,8 @@ def build_review_rows(
                 "healthcare_thin_evidence",
                 "industrials_thin_evidence",
                 "industrials_probationary_modeled",
+                "consumer_defensive_thin_evidence",
+                "consumer_defensive_probationary_modeled",
             }:
                 confidence = int(row.get("confidence_score", 0) or 0)
                 if market_stress == "high" and confidence >= 70 and str(row.get("recommended_horizon", "")).strip() in {"1to2w", "2to6w"}:

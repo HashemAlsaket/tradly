@@ -175,6 +175,23 @@ class InterpretNewsContractTests(unittest.TestCase):
         self.assertIn("industrials-aware thesis tags", prompt)
         self.assertNotIn("healthcare-aware thesis tags", prompt)
 
+    def test_prompt_builder_includes_consumer_defensive_guidance_when_relevant(self) -> None:
+        prompt = build_news_interpreter_user_prompt(
+            [
+                {
+                    "provider": "marketaux",
+                    "provider_news_id": "c1",
+                    "headline": "Walmart traffic trend",
+                    "summary": "Discount retail traffic remains resilient.",
+                    "symbols": ["WMT"],
+                    "symbol_sector_hints": ["consumer_defensive"],
+                }
+            ]
+        )
+
+        self.assertIn("consumer-defensive-aware thesis tags", prompt)
+        self.assertNotIn("healthcare-aware thesis tags", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

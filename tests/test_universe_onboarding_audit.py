@@ -87,6 +87,30 @@ class UniverseOnboardingAuditTest(unittest.TestCase):
 
         self.assertEqual(checks["sector_proxy_present"]["status"], "pass")
 
+    def test_consumer_defensive_sector_proxy_is_checked_with_xlp(self) -> None:
+        flags = _expected_flags({"onboarding_stage": "modeled_with_direct_news", "portfolio_eligible": True})
+        checks = _build_checks(
+            symbol="WMT",
+            sector_proxy="XLP",
+            flags=flags,
+            instrument_symbols={"WMT"},
+            market_data_symbols={"WMT", "XLP"},
+            model_symbols={"WMT"},
+            direct_news_symbols={"WMT"},
+            portfolio_symbols={"WMT"},
+            daily_dates={("WMT", "2026-03-18")},
+            latest_daily_market_date="2026-03-18",
+            intraday_symbols={"WMT"},
+            watermark_symbols=set(),
+            snapshot_symbols={"WMT"},
+            symbol_movement_symbols={"WMT"},
+            recommendation_symbols={"WMT"},
+            symbol_news_symbols={"WMT"},
+            portfolio_policy_symbols={"WMT"},
+        )
+
+        self.assertEqual(checks["sector_proxy_present"]["status"], "pass")
+
 
 if __name__ == "__main__":
     unittest.main()

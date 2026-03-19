@@ -265,6 +265,70 @@ class RecommendationReviewTests(unittest.TestCase):
         self.assertEqual(rows[0]["review_reason_code"], "industrials_heavy_equipment_actionable")
         self.assertEqual(rows[0]["sector_subtype"], "heavy_equipment_capex")
 
+    def test_consumer_defensive_direct_news_thin_evidence_downgrades_promote(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "WMT",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 76,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 4, 0, 0),
+            symbol_metadata={
+                "WMT": {
+                    "sector": "Consumer Defensive",
+                    "industry": "Discount Stores",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["core_leader", "membership_retail"],
+                }
+            },
+            symbol_news_rows_by_symbol={"WMT": {"coverage_state": "thin_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "review_required")
+        self.assertEqual(rows[0]["review_reason_code"], "consumer_defensive_thin_evidence")
+        self.assertEqual(rows[0]["sector_subtype"], "membership_retail")
+
+    def test_consumer_defensive_promote_gets_specialized_reason(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "PG",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 74,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 4, 0, 0),
+            symbol_metadata={
+                "PG": {
+                    "sector": "Consumer Defensive",
+                    "industry": "Household & Personal Products",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["core_leader", "household_personal_care"],
+                }
+            },
+            symbol_news_rows_by_symbol={"PG": {"coverage_state": "sufficient_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "consumer_defensive_household_actionable")
+        self.assertEqual(rows[0]["sector_subtype"], "household_personal_care")
+
     def test_event_risk_caps_buy_to_watch(self) -> None:
         rows = build_review_rows(
             recommendation_rows=[

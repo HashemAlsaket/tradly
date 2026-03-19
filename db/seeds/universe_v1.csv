@@ -76,7 +76,7 @@ ORCL,stock,Technology,Software - Infrastructure,investable,true
 OXY,stock,Energy,Oil & Gas E&P,investable,false
 PEP,stock,Consumer Defensive,Beverages - Non-Alcoholic,investable,true
 PFE,stock,Healthcare,Drug Manufacturers - General,investable,true
-PG,stock,Consumer Defensive,Household & Personal Products,investable,false
+PG,stock,Consumer Defensive,Household & Personal Products,investable,true
 PLD,stock,Real Estate,REIT - Industrial,investable,false
 PLTR,stock,Technology,Software - Infrastructure,investable,true
 QQQ,etf,ETF,Large Cap Growth ETF,investable,true

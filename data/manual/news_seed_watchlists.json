@@ -11,7 +11,8 @@
     "asia_semis": 300,
     "asia_macro": 200,
     "sector_context": 200,
-    "event_reserve": 100
+    "event_reserve": 100,
+    "consumer_defensive_core": 300
   },
   "bucket_request_overrides": {
     "industrials_core": {
@@ -46,6 +47,11 @@
       "GE",
       "HON",
       "LMT"
+    ],
+    "consumer_defensive_core": [
+      "COST",
+      "PG",
+      "WMT"
     ],
     "us_macro": [
       "ARKK",

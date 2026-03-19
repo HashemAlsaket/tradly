@@ -33,6 +33,11 @@ SECTOR_MODULE_RULES = {
         "Prefer concise tags such as `backlog_orders`, `capex_manufacturing_demand`, `aerospace_defense`, `freight_logistics`, `margin_input_cost`, `macro_pmi_sensitivity`.",
         "When an industrials article is mainly about capital equipment, aerospace and defense, or logistics, keep the impact scope as `industrials` or `symbol_specific` rather than forcing it into broad market buckets.",
     ],
+    "consumer_defensive": [
+        "For consumer defensive articles, classify the impact using consumer-defensive-aware thesis tags when applicable.",
+        "Prefer concise tags such as `pricing_power`, `consumer_staples_demand`, `membership_traffic`, `margin_input_cost`, `defensive_rotation`, `private_label_mix`.",
+        "When a consumer defensive article is mainly about staples demand, discount retail traffic, or household and personal care resilience, keep the impact scope as `consumer_defensive` or `symbol_specific` rather than forcing it into broad market buckets.",
+    ],
 }
 
 

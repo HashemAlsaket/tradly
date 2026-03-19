@@ -2,11 +2,11 @@
   "version": 1,
   "summary": {
     "all_symbols": 118,
-    "active_symbols": 54,
-    "market_data_symbols": 83,
-    "model_symbols": 54,
-    "direct_news_symbols": 50,
-    "portfolio_eligible_symbols": 10
+    "active_symbols": 55,
+    "market_data_symbols": 85,
+    "model_symbols": 55,
+    "direct_news_symbols": 53,
+    "portfolio_eligible_symbols": 13
   },
   "scopes": {
     "all_symbols": [
@@ -173,6 +173,7 @@
       "ORCL",
       "PEP",
       "PFE",
+      "PG",
       "PLTR",
       "QQQ",
       "SNDK",
@@ -204,6 +205,7 @@
       "BLK",
       "CAT",
       "CHTR",
+      "CL",
       "COIN",
       "COST",
       "CRM",
@@ -242,6 +244,7 @@
       "ORCL",
       "PEP",
       "PFE",
+      "PG",
       "PLTR",
       "QQQ",
       "SHY",
@@ -314,6 +317,7 @@
       "ORCL",
       "PEP",
       "PFE",
+      "PG",
       "PLTR",
       "QQQ",
       "SNDK",
@@ -335,6 +339,7 @@
       "ASML",
       "AVGO",
       "CAT",
+      "COST",
       "EWJ",
       "EWT",
       "FXI",
@@ -354,6 +359,7 @@
       "MU",
       "NVDA",
       "NVTS",
+      "PG",
       "QQQ",
       "SHY",
       "SMH",
@@ -366,6 +372,7 @@
       "USO",
       "UUP",
       "VIXY",
+      "WMT",
       "XLB",
       "XLC",
       "XLE",
@@ -380,6 +387,7 @@
     ],
     "portfolio_eligible_symbols": [
       "CAT",
+      "COST",
       "DHR",
       "GE",
       "HON",
@@ -387,8 +395,10 @@
       "JNJ",
       "LLY",
       "MRK",
+      "PG",
       "TMO",
-      "UNH"
+      "UNH",
+      "WMT"
     ]
   },
   "groupings": {
@@ -565,11 +575,14 @@
       ],
       "core_leader": [
         "CAT",
+        "COST",
         "GE",
         "HON",
         "JNJ",
         "LLY",
-        "UNH"
+        "PG",
+        "UNH",
+        "WMT"
       ],
       "diversified_industrials": [
         "HON"
@@ -583,6 +596,10 @@
       "heavy_equipment_capex": [
         "CAT",
         "DE"
+      ],
+      "household_personal_care": [
+        "CL",
+        "PG"
       ],
       "macro_context": [
         "ARKK",
@@ -604,6 +621,10 @@
         "CVS",
         "UNH"
       ],
+      "membership_retail": [
+        "COST",
+        "WMT"
+      ],
       "pharma_defensive": [
         "GILD",
         "JNJ",
@@ -611,6 +632,7 @@
         "MRK"
       ],
       "probationary_market_data_only": [
+        "CL",
         "CVS",
         "GILD",
         "UNP",
@@ -724,6 +746,7 @@
       ],
       "sector_proxy": [
         "XLI",
+        "XLP",
         "XLV"
       ],
       "semis": [
@@ -741,10 +764,14 @@
         "NVTS",
         "SNDK",
         "TSM"
+      ],
+      "staples_beverages": [
+        "PEP"
       ]
     },
     "by_onboarding_stage": {
       "market_data_only": [
+        "CL",
         "CVS",
         "GILD",
         "UNP",
@@ -755,17 +782,21 @@
         "DE",
         "DHR",
         "ISRG",
+        "PEP",
         "TMO"
       ],
       "modeled_with_direct_news": [
         "CAT",
+        "COST",
         "GE",
         "HON",
         "JNJ",
         "LLY",
         "LMT",
         "MRK",
-        "UNH"
+        "PG",
+        "UNH",
+        "WMT"
       ]
     },
     "news_buckets": {
@@ -794,6 +825,11 @@
         "GE",
         "HON",
         "LMT"
+      ],
+      "consumer_defensive_core": [
+        "COST",
+        "PG",
+        "WMT"
       ],
       "us_macro": [
         "ARKK",

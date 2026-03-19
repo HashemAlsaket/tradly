@@ -300,14 +300,18 @@
       "symbol": "CL",
       "asset_type": "stock",
       "active": false,
-      "market_data": false,
+      "market_data": true,
       "model": false,
       "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "Consumer Defensive",
       "industry": "Household & Personal Products",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "household_personal_care",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
@@ -332,14 +336,20 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Consumer Defensive",
       "industry": "Discount Stores",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "membership_retail"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "consumer_defensive_core"
+      ]
     },
     {
       "symbol": "CRM",
@@ -1251,11 +1261,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Consumer Defensive",
       "industry": "Beverages - Non-Alcoholic",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "staples_beverages"
       ],
       "news_buckets": []
     },
@@ -1277,17 +1290,23 @@
     {
       "symbol": "PG",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
-      "direct_news": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Consumer Defensive",
       "industry": "Household & Personal Products",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "household_personal_care"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "consumer_defensive_core"
+      ]
     },
     {
       "symbol": "PLD",
@@ -1734,14 +1753,20 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Consumer Defensive",
       "industry": "Discount Stores",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "membership_retail"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "consumer_defensive_core"
+      ]
     },
     {
       "symbol": "XLB",
@@ -1858,7 +1883,8 @@
       "industry": "Consumer Staples ETF",
       "halal_flag": "investable",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"
