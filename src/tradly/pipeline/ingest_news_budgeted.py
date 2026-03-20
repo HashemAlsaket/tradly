@@ -3,7 +3,11 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import re
+import socket
+import time
 import urllib.parse
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -19,6 +23,8 @@ DEFAULT_DAILY_BUDGET = 100
 DEFAULT_LIMIT_PER_REQUEST = 3
 DEFAULT_PULLS_PER_BUCKET_PER_RUN = 1
 DEFAULT_MIN_SYMBOL_RELEVANCE = 15.0
+DEFAULT_HTTP_RETRY_COUNT = 2
+DEFAULT_HTTP_RETRY_SLEEP_SEC = 2.0
 NEWS_WATERMARK_SOURCE = "news_events_marketaux_bucket"
 REQUIRED_BUCKETS = (
     "core_semis",
@@ -29,6 +35,47 @@ REQUIRED_BUCKETS = (
     "sector_context",
     "event_reserve",
 )
+
+LOW_VALUE_BUCKET_SOURCE_RULES: dict[str, dict[str, tuple[str, ...]]] = {
+    "technology_core": {
+        "source_names": (
+            "quantifiedstrategies.com",
+            "zerohedge.com",
+        ),
+        "headline_patterns": (
+            r"\bdow jones\b",
+            r"\bmarket slump\b",
+            r"\bmarkets\b",
+            r"\bopex\b",
+            r"\betf\b",
+            r"\btech sector under pressure\b",
+            r"\bglobal markets\b",
+            r"\bstock futures\b",
+        ),
+    },
+    "communication_services_core": {
+        "source_names": (
+            "thestockmarketwatch.com",
+        ),
+        "headline_patterns": (
+            r"\bapple\b",
+            r"\biphone\b",
+            r"\bbezos\b",
+            r"\bglobal markets\b",
+            r"\bstock futures\b",
+            r"\bmarket slump\b",
+            r"\bmarkets\b",
+        ),
+    },
+    "consumer_defensive_core": {
+        "source_names": (),
+        "headline_patterns": (
+            r"\beur/usd\b",
+            r"\bai startup\b",
+            r"\bfuture tech giants\b",
+        ),
+    },
+}
 
 
 def _bucket_override_int(
@@ -50,6 +97,21 @@ def _artifact_output_path(repo_root: Path, run_date: str) -> Path:
     out_dir = repo_root / "data" / "runs" / run_date
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir / "news_budgeted_run.json"
+
+
+def _news_item_filter_reason(bucket: str, source_name: str, headline: str) -> str | None:
+    rules = LOW_VALUE_BUCKET_SOURCE_RULES.get(bucket)
+    if not rules:
+        return None
+    source = source_name.strip().lower()
+    title = headline.strip().lower()
+    for blocked_source in rules.get("source_names", ()):
+        if source == blocked_source:
+            return f"source:{blocked_source}"
+    for pattern in rules.get("headline_patterns", ()):
+        if re.search(pattern, title):
+            return f"headline:{pattern}"
+    return None
 
 
 def _min_symbol_relevance() -> float:
@@ -157,7 +219,7 @@ def _fetch_marketaux_news(
     limit: int,
     published_after_utc: str | None,
     page: int,
-) -> tuple[int, str, list[dict]]:
+) -> tuple[int, str, list[dict], int]:
     params = urllib.parse.urlencode(
         {
             "api_token": api_token,
@@ -169,21 +231,44 @@ def _fetch_marketaux_news(
             **({"published_after": published_after_utc} if published_after_utc else {}),
         }
     )
-    conn = http.client.HTTPSConnection("api.marketaux.com", timeout=30)
+    retry_count_raw = os.getenv("TRADLY_NEWS_HTTP_RETRY_COUNT", str(DEFAULT_HTTP_RETRY_COUNT)).strip()
+    retry_sleep_raw = os.getenv("TRADLY_NEWS_HTTP_RETRY_SLEEP_SEC", str(DEFAULT_HTTP_RETRY_SLEEP_SEC)).strip()
     try:
-        conn.request("GET", f"/v1/news/all?{params}")
-        response = conn.getresponse()
-        body = response.read().decode("utf-8")
-    finally:
-        conn.close()
+        retry_count = max(0, int(retry_count_raw))
+    except ValueError:
+        retry_count = DEFAULT_HTTP_RETRY_COUNT
+    try:
+        retry_sleep_sec = max(0.0, float(retry_sleep_raw))
+    except ValueError:
+        retry_sleep_sec = DEFAULT_HTTP_RETRY_SLEEP_SEC
 
-    if response.status >= 400:
-        return response.status, body, []
-    payload = json.loads(body)
-    data = payload.get("data", [])
-    if not isinstance(data, list):
-        raise RuntimeError("marketaux response missing data list")
-    return response.status, body, data
+    last_error: Exception | None = None
+    for attempt in range(retry_count + 1):
+        conn = http.client.HTTPSConnection("api.marketaux.com", timeout=30)
+        try:
+            conn.request("GET", f"/v1/news/all?{params}")
+            response = conn.getresponse()
+            body = response.read().decode("utf-8")
+        except (TimeoutError, socket.timeout, http.client.HTTPException, OSError) as exc:
+            last_error = exc
+            body = f"network_error:{exc}"
+            if attempt >= retry_count:
+                return 0, body, [], attempt
+            if retry_sleep_sec > 0:
+                time.sleep(retry_sleep_sec * (attempt + 1))
+            continue
+        finally:
+            conn.close()
+
+        if response.status >= 400:
+            return response.status, body, [], attempt
+        payload = json.loads(body)
+        data = payload.get("data", [])
+        if not isinstance(data, list):
+            raise RuntimeError("marketaux response missing data list")
+        return response.status, body, data, attempt
+
+    return 0, f"network_error:{last_error}", [], retry_count
 
 
 def _ensure_tables(conn) -> None:
@@ -424,9 +509,14 @@ def main() -> int:
                 "requests_made": 0,
                 "events_upserted": 0,
                 "symbol_links_upserted": 0,
+                "filtered_article_count": 0,
+                "filtered_article_reasons": {},
             }
             for bucket in buckets
         }
+        filtered_articles_total = 0
+        filtered_articles_by_bucket: dict[str, int] = defaultdict(int)
+        filtered_article_reason_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
         for bucket, symbols in buckets.items():
             if stop_all_buckets:
@@ -473,7 +563,7 @@ def main() -> int:
                     break
 
                 try:
-                    status_code, body, articles = _fetch_marketaux_news(
+                    status_code, body, articles, retry_attempts = _fetch_marketaux_news(
                         api_token,
                         symbols,
                         bucket_limit_per_request,
@@ -501,10 +591,13 @@ def main() -> int:
                 elif status_code >= 400:
                     response_status = "http_error"
                     detail = f"http_status={status_code} body={body[:250]}"
+                if retry_attempts > 0:
+                    detail = f"{detail} retries={retry_attempts}"
 
                 event_rows: list[tuple] = []
                 symbol_rows: list[tuple] = []
                 filtered_symbol_links = 0
+                filtered_articles = 0
                 if response_status == "success":
                     bucket_latest_published_at = per_bucket_max_published_at.get(bucket)
                     for item in articles:
@@ -520,6 +613,13 @@ def main() -> int:
                             bucket_latest_published_at = published_at_dt
 
                         source = item.get("source") if isinstance(item.get("source"), str) else "unknown"
+                        filter_reason = _news_item_filter_reason(bucket, source, title)
+                        if filter_reason:
+                            filtered_articles += 1
+                            filtered_articles_total += 1
+                            filtered_articles_by_bucket[bucket] += 1
+                            filtered_article_reason_counts[bucket][filter_reason] += 1
+                            continue
                         sentiment = item.get("sentiment")
                         event_rows.append(
                             (
@@ -621,6 +721,11 @@ def main() -> int:
                 events_upserted_total += len(event_rows)
                 symbols_upserted_total += len(symbol_rows)
                 filtered_symbol_links_total += filtered_symbol_links
+                bucket_results[bucket]["filtered_article_count"] = int(bucket_results[bucket]["filtered_article_count"]) + filtered_articles
+                bucket_reason_counts = filtered_article_reason_counts.get(bucket, {})
+                bucket_results[bucket]["filtered_article_reasons"] = {
+                    reason: count for reason, count in sorted(bucket_reason_counts.items())
+                }
                 bucket_results[bucket]["last_response_status"] = response_status
                 bucket_results[bucket]["events_upserted"] = int(bucket_results[bucket]["events_upserted"]) + len(event_rows)
                 bucket_results[bucket]["symbol_links_upserted"] = int(bucket_results[bucket]["symbol_links_upserted"]) + len(symbol_rows)
@@ -629,7 +734,7 @@ def main() -> int:
                 print(
                     f"bucket={bucket} status={response_status} req_used={used_by_bucket[bucket]}/{cap} "
                     f"events={len(event_rows)} symbol_links={len(symbol_rows)} "
-                    f"filtered_symbol_links={filtered_symbol_links}"
+                    f"filtered_symbol_links={filtered_symbol_links} filtered_articles={filtered_articles}"
                 )
                 if response_status == "limit_reached":
                     stop_all_buckets = True
@@ -661,6 +766,10 @@ def main() -> int:
                 "events_upserted": events_upserted_total,
                 "symbol_links_upserted": symbols_upserted_total,
                 "symbol_links_filtered_below_relevance": filtered_symbol_links_total,
+                "filtered_articles_total": filtered_articles_total,
+                "filtered_articles_by_bucket": {
+                    bucket: filtered_articles_by_bucket[bucket] for bucket in sorted(filtered_articles_by_bucket)
+                },
                 "bucket_results": bucket_results,
             },
             indent=2,
@@ -673,6 +782,7 @@ def main() -> int:
     print(f"events_upserted={events_upserted_total}")
     print(f"symbol_links_upserted={symbols_upserted_total}")
     print(f"symbol_links_filtered_below_relevance={filtered_symbol_links_total}")
+    print(f"filtered_articles_total={filtered_articles_total}")
     print(f"min_symbol_relevance={min_symbol_relevance}")
     print(f"daily_budget={daily_budget}")
     print(f"artifact={artifact_path}")

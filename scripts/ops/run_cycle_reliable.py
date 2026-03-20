@@ -84,6 +84,7 @@ def _validate_postflight_snapshot(
     started_at: datetime,
     ended_at: datetime,
     now_utc: datetime,
+    frozen_time_run: bool,
     max_age_sec: int = POSTFLIGHT_WRITE_MAX_AGE_SEC,
 ) -> tuple[int | None, str | None]:
     if snapshot_payload is None:
@@ -104,7 +105,6 @@ def _validate_postflight_snapshot(
     if freshness_as_of < started_at:
         return None, "postflight_freshness_not_advanced"
 
-    frozen_time_run = bool(os.getenv(NOW_UTC_OVERRIDE_ENV, "").strip())
     if not frozen_time_run:
         write_age_sec = int((now_utc - written_at).total_seconds())
         freshness_age_sec = int((now_utc - freshness_as_of).total_seconds())
@@ -161,6 +161,7 @@ def main() -> int:
 
     started_at = datetime.now(timezone.utc)
     env.setdefault(NOW_UTC_OVERRIDE_ENV, started_at.isoformat())
+    frozen_time_run = bool(env.get(NOW_UTC_OVERRIDE_ENV, "").strip())
     lock_fh = lock_path.open("w", encoding="utf-8")
     try:
         try:
@@ -197,6 +198,9 @@ def main() -> int:
                 "preflight_actions": preflight_payload.get("actions") if preflight_payload else None,
                 "preflight_stdout_tail": preflight_out[-3000:],
                 "preflight_stderr_tail": preflight_err[-3000:],
+                "failure_phase": "preflight",
+                "failure_reason_code": "preflight_catchup_failed",
+                "used_frozen_time": frozen_time_run,
                 "reason": "preflight_catchup_failed",
             }
             _append_log(log_path, payload)
@@ -234,6 +238,7 @@ def main() -> int:
                 started_at=started_at,
                 ended_at=ended_at,
                 now_utc=now_utc,
+                frozen_time_run=frozen_time_run,
             )
             if cycle_rc == 0
             else (None, None)
@@ -266,10 +271,15 @@ def main() -> int:
             "cycle_stderr_tail": cycle_stderr[-3000:],
             "freshness_stdout_tail": freshness_out[-3000:],
             "freshness_stderr_tail": freshness_err[-3000:],
+            "failure_phase": None,
+            "failure_reason_code": None,
+            "used_frozen_time": frozen_time_run,
         }
         if failure_reason:
             payload["status"] = "FAIL"
             payload["postflight_status"] = "FAIL"
+            payload["failure_phase"] = "postflight"
+            payload["failure_reason_code"] = failure_reason
             payload["reason"] = failure_reason
         _append_log(log_path, payload)
 
