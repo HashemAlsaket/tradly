@@ -6,6 +6,10 @@ import json
 BASE_RULES = [
     "Use `symbol_specific` when the article is primarily about one or more named symbols.",
     "Use a canonical sector scope when the impact is mainly sector-level.",
+    "Use `relevance_symbols` only for symbols that are explicitly present in the provided `symbols` list for that article.",
+    "Do not add unrelated symbols to `relevance_symbols` just because they are large-cap peers, AI leaders, or thematically adjacent.",
+    "If the article is sector-level or macro-level and no single provided symbol is clearly the main subject, return an empty `relevance_symbols` list.",
+    "When the article is clearly about one provided symbol, prefer only that symbol in `relevance_symbols` rather than carrying over other tickers.",
     "Canonical sector ids only: `technology`, `healthcare`, `financial_services`, `industrials`, `consumer_defensive`, `communication_services`, `consumer_cyclical`, `basic_materials`, `real_estate`, `utilities`, `energy`.",
     "Do not output human-friendly aliases like `financials`, `consumer discretionary`, `consumer staples`, `materials`, `communication services`, or `real estate`.",
     "Use exact scope ids from the allowed list only. Prefer underscores, not spaces.",
@@ -28,6 +32,7 @@ SECTOR_MODULE_RULES = {
         "Prefer concise tags such as `cloud_spend`, `enterprise_it_demand`, `software_margin_durability`, `ai_platform_monetization`, `networking_refresh`, `hardware_upgrade_cycle`.",
         "Use `semis` when the article is clearly semiconductor-specific. Use `technology` for broad software, infrastructure, enterprise IT, networking, or hardware platform articles.",
         "When a broad technology article is mainly about cloud platforms, enterprise software, networking infrastructure, consumer hardware, or AI application software, keep the impact scope as `technology` or `symbol_specific` rather than forcing it into broad market buckets.",
+        "Do not tag semiconductor names in `relevance_symbols` unless they are explicitly listed in the article's provided `symbols`.",
     ],
     "healthcare": [
         "For healthcare articles, classify the impact using healthcare-aware thesis tags when applicable.",
@@ -43,16 +48,19 @@ SECTOR_MODULE_RULES = {
         "For consumer defensive articles, classify the impact using consumer-defensive-aware thesis tags when applicable.",
         "Prefer concise tags such as `pricing_power`, `consumer_staples_demand`, `membership_traffic`, `margin_input_cost`, `defensive_rotation`, `private_label_mix`.",
         "When a consumer defensive article is mainly about staples demand, discount retail traffic, or household and personal care resilience, keep the impact scope as `consumer_defensive` or `symbol_specific` rather than forcing it into broad market buckets.",
+        "Avoid tagging unrelated technology or AI symbols when the article is mainly about consumer staples or discount retail operators.",
     ],
     "communication_services": [
         "For communication services articles, classify the impact using communication-services-aware thesis tags when applicable.",
         "Prefer concise tags such as `digital_ad_demand`, `platform_monetization`, `streaming_engagement`, `subscriber_churn`, `content_pipeline`, `regulatory_platform_risk`, `ad_pricing_mix`.",
         "When a communication services article is mainly about internet platforms, streaming media, entertainment, or cable broadband, keep the impact scope as `communication_services` or `symbol_specific` rather than forcing it into broad market buckets.",
+        "Only tag a communication-services symbol when that exact provided symbol is clearly discussed; do not substitute unrelated mega-cap tech or semiconductor names.",
     ],
     "energy": [
         "For energy articles, classify the impact using energy-aware thesis tags when applicable.",
         "Prefer concise tags such as `oil_price_leverage`, `upstream_supply_discipline`, `refining_margin`, `opec_supply`, `energy_services_demand`, `commodity_cost_pass_through`.",
         "When an energy article is mainly about integrated majors, upstream exploration and production, oilfield services, or commodity-linked cash flow leverage, keep the impact scope as `energy` or `symbol_specific` rather than forcing it into broad market or macro buckets.",
+        "When the article is about crude, OPEC, or macro oil shock more than a specific company, leave `relevance_symbols` empty instead of forcing a stock tag.",
     ],
 }
 

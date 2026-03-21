@@ -187,6 +187,7 @@ def main() -> int:
     except Exception:
         universe_registry = {}
     symbol_news_payload = _load_latest_json(runs_dir, "*/symbol_news_v1.json")
+    symbol_movement_payload = _load_latest_json(runs_dir, "*/symbol_movement_v1.json")
     symbol_metadata = {
         str(item.get("symbol", "")).strip().upper(): item
         for item in universe_registry.get("symbols", [])
@@ -195,6 +196,11 @@ def main() -> int:
     symbol_news_rows_by_symbol = {
         str(row.get("scope_id", "")).strip().upper(): row
         for row in symbol_news_payload.get("rows", [])
+        if isinstance(row, dict) and str(row.get("scope_id", "")).strip()
+    }
+    symbol_movement_rows_by_symbol = {
+        str(row.get("scope_id", "")).strip().upper(): row
+        for row in symbol_movement_payload.get("rows", [])
         if isinstance(row, dict) and str(row.get("scope_id", "")).strip()
     }
     event_risk_rows_by_symbol = {
@@ -208,6 +214,7 @@ def main() -> int:
         intraday_actionable=intraday_actionable,
         symbol_metadata=symbol_metadata,
         symbol_news_rows_by_symbol=symbol_news_rows_by_symbol,
+        symbol_movement_rows_by_symbol=symbol_movement_rows_by_symbol,
         event_risk_rows_by_symbol=event_risk_rows_by_symbol,
         market_row=market_row,
     )

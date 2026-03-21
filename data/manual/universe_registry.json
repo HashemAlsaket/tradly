@@ -346,8 +346,8 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": true,
-      "onboarding_stage": "modeled_with_direct_news",
+      "direct_news": false,
+      "onboarding_stage": "modeled",
       "portfolio_eligible": true,
       "sector": "Consumer Defensive",
       "industry": "Discount Stores",
@@ -357,9 +357,7 @@
         "core_leader",
         "membership_retail"
       ],
-      "news_buckets": [
-        "consumer_defensive_core"
-      ]
+      "news_buckets": []
     },
     {
       "symbol": "CRM",
@@ -367,8 +365,8 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": true,
-      "onboarding_stage": "modeled_with_direct_news",
+      "direct_news": false,
+      "onboarding_stage": "modeled",
       "portfolio_eligible": true,
       "sector": "Technology",
       "industry": "Software - Application",
@@ -377,9 +375,7 @@
         "sector_leader",
         "enterprise_software"
       ],
-      "news_buckets": [
-        "technology_core"
-      ]
+      "news_buckets": []
     },
     {
       "symbol": "CSCO",
@@ -387,8 +383,8 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": true,
-      "onboarding_stage": "modeled_with_direct_news",
+      "direct_news": false,
+      "onboarding_stage": "modeled",
       "portfolio_eligible": false,
       "sector": "Technology",
       "industry": "Communication Equipment",
@@ -397,9 +393,7 @@
         "sector_leader",
         "networking_infrastructure"
       ],
-      "news_buckets": [
-        "technology_core"
-      ]
+      "news_buckets": []
     },
     {
       "symbol": "CVX",
@@ -645,8 +639,8 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": true,
-      "onboarding_stage": "modeled_with_direct_news",
+      "direct_news": false,
+      "onboarding_stage": "modeled",
       "portfolio_eligible": true,
       "sector": "Industrials",
       "industry": "Aerospace & Defense",
@@ -656,9 +650,7 @@
         "core_leader",
         "aerospace_defense"
       ],
-      "news_buckets": [
-        "industrials_core"
-      ]
+      "news_buckets": []
     },
     {
       "symbol": "GILD",
@@ -1064,8 +1056,8 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": true,
-      "onboarding_stage": "modeled_with_direct_news",
+      "direct_news": false,
+      "onboarding_stage": "modeled",
       "portfolio_eligible": true,
       "sector": "Communication Services",
       "industry": "Internet Content & Information",
@@ -1074,9 +1066,7 @@
         "sector_leader",
         "internet_platforms"
       ],
-      "news_buckets": [
-        "communication_services_core"
-      ]
+      "news_buckets": []
     },
     {
       "symbol": "MRK",
@@ -1190,8 +1180,8 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": true,
-      "onboarding_stage": "modeled_with_direct_news",
+      "direct_news": false,
+      "onboarding_stage": "modeled",
       "portfolio_eligible": false,
       "sector": "Communication Services",
       "industry": "Entertainment",
@@ -1200,9 +1190,7 @@
         "sector_leader",
         "streaming_media"
       ],
-      "news_buckets": [
-        "communication_services_core"
-      ]
+      "news_buckets": []
     },
     {
       "symbol": "NKE",
@@ -1281,8 +1269,8 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": true,
-      "onboarding_stage": "modeled_with_direct_news",
+      "direct_news": false,
+      "onboarding_stage": "modeled",
       "portfolio_eligible": true,
       "sector": "Technology",
       "industry": "Software - Infrastructure",
@@ -1291,9 +1279,7 @@
         "sector_leader",
         "cloud_platforms"
       ],
-      "news_buckets": [
-        "technology_core"
-      ]
+      "news_buckets": []
     },
     {
       "symbol": "OXY",
@@ -1353,8 +1339,8 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": true,
-      "onboarding_stage": "modeled_with_direct_news",
+      "direct_news": false,
+      "onboarding_stage": "modeled",
       "portfolio_eligible": true,
       "sector": "Consumer Defensive",
       "industry": "Household & Personal Products",
@@ -1364,9 +1350,7 @@
         "core_leader",
         "household_personal_care"
       ],
-      "news_buckets": [
-        "consumer_defensive_core"
-      ]
+      "news_buckets": []
     },
     {
       "symbol": "PLD",

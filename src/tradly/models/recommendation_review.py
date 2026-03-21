@@ -152,7 +152,11 @@ def _review_disposition(row: dict[str, Any], *, intraday_actionable: bool) -> tu
 def _review_bucket(row: dict[str, Any], disposition: str, reason_code: str) -> str:
     action = str(row.get("recommended_action", "")).strip()
     if disposition == "promote":
-        return "top_longs" if action == "Buy" else "top_shorts" if action == "Sell/Trim" else "top_ideas"
+        if action in {"Buy", "Watch Buy"}:
+            return "top_longs"
+        if action in {"Sell/Trim", "Watch Trim"}:
+            return "top_shorts"
+        return "top_ideas"
     if disposition == "review_required":
         if str(row.get("regime_alignment", "")).strip().lower() == "contrarian":
             return "contrarian_rebound" if action == "Buy" else "contrarian_review"
@@ -211,6 +215,91 @@ def _display_confidence_score(
     return _band(52, 60)
 
 
+def _hostile_tape_survivor_strength(
+    *,
+    symbol_movement_row: dict[str, Any] | None,
+    sector: str,
+) -> str:
+    if not isinstance(symbol_movement_row, dict):
+        return "unknown"
+    direction = str(symbol_movement_row.get("signal_direction", "")).strip().lower()
+    confidence = int(symbol_movement_row.get("confidence_score", 0) or 0)
+    evidence = symbol_movement_row.get("evidence", {}) if isinstance(symbol_movement_row.get("evidence"), dict) else {}
+    intraday_overlay = evidence.get("intraday_overlay", {}) if isinstance(evidence.get("intraday_overlay"), dict) else {}
+    intraday_state = str(intraday_overlay.get("symbol_intraday_overlay_state", "")).strip().lower()
+    rel_vs_market_intraday = float(intraday_overlay.get("relative_intraday_vs_market_pct", 0.0) or 0.0)
+    rel_vs_sector_intraday = float(intraday_overlay.get("relative_intraday_vs_sector_pct", 0.0) or 0.0)
+    rel_vs_market_20d = float(evidence.get("relative_vs_market_20d", 0.0) or 0.0)
+    sector_relative_20d = float(evidence.get("sector_relative_20d", 0.0) or 0.0)
+
+    if direction != "bullish" or confidence < 75 or rel_vs_market_20d < 0.03:
+        return "weak"
+    if intraday_state == "confirming" and rel_vs_market_intraday >= 0.004:
+        return "strong"
+    if intraday_state == "mixed" and rel_vs_market_intraday >= 0.006 and rel_vs_sector_intraday >= 0.0 and confidence >= 80:
+        return "strong"
+    if (
+        sector == "Energy"
+        and intraday_state == "fading"
+        and confidence >= 85
+        and rel_vs_market_intraday >= 0.005
+        and rel_vs_sector_intraday >= 0.0
+        and sector_relative_20d >= 0.0
+    ):
+        return "strong"
+    return "weak"
+
+
+def _hostile_tape_thesis_survivor_strength(
+    *,
+    row: dict[str, Any],
+    symbol_news_row: dict[str, Any] | None,
+    symbol_movement_row: dict[str, Any] | None,
+) -> str:
+    if not isinstance(symbol_news_row, dict):
+        return "weak"
+    coverage_state = str(symbol_news_row.get("coverage_state", "")).strip().lower()
+    news_direction = str(symbol_news_row.get("signal_direction", "")).strip().lower()
+    news_confidence = int(symbol_news_row.get("confidence_score", 0) or 0)
+    if coverage_state != "sufficient_evidence" or news_direction != "bullish" or news_confidence < 78:
+        return "weak"
+
+    recommended_horizon = str(row.get("recommended_horizon", "")).strip()
+    recommendation_class = str(row.get("recommendation_class", "")).strip().lower()
+    recommendation_confidence = int(row.get("confidence_score", 0) or 0)
+    if recommended_horizon not in {"1to2w", "2to6w"}:
+        return "weak"
+    if recommendation_class not in {"mixed_weak_long", "mixed_strong_long", "aligned_long"}:
+        return "weak"
+    if recommendation_confidence < 68:
+        return "weak"
+
+    if not isinstance(symbol_movement_row, dict):
+        return "strong"
+    direction = str(symbol_movement_row.get("signal_direction", "")).strip().lower()
+    confidence = int(symbol_movement_row.get("confidence_score", 0) or 0)
+    evidence = symbol_movement_row.get("evidence", {}) if isinstance(symbol_movement_row.get("evidence"), dict) else {}
+    intraday_overlay = evidence.get("intraday_overlay", {}) if isinstance(evidence.get("intraday_overlay"), dict) else {}
+    intraday_state = str(intraday_overlay.get("symbol_intraday_overlay_state", "")).strip().lower()
+    rel_vs_market_intraday = float(intraday_overlay.get("relative_intraday_vs_market_pct", 0.0) or 0.0)
+    rel_vs_sector_intraday = float(intraday_overlay.get("relative_intraday_vs_sector_pct", 0.0) or 0.0)
+    rel_vs_market_20d = float(evidence.get("relative_vs_market_20d", 0.0) or 0.0)
+
+    if intraday_state == "fading":
+        return "weak"
+    if intraday_state not in {"mixed", "confirming"}:
+        return "weak"
+    if rel_vs_market_intraday < -0.012:
+        return "weak"
+    if rel_vs_sector_intraday < -0.0065:
+        return "weak"
+    if rel_vs_market_20d < -0.04:
+        return "weak"
+    if direction == "bearish" and confidence >= 72:
+        return "weak"
+    return "strong"
+
+
 def build_review_rows(
     *,
     recommendation_rows: list[dict[str, Any]],
@@ -218,12 +307,14 @@ def build_review_rows(
     intraday_actionable: bool = True,
     symbol_metadata: dict[str, dict[str, Any]] | None = None,
     symbol_news_rows_by_symbol: dict[str, dict[str, Any]] | None = None,
+    symbol_movement_rows_by_symbol: dict[str, dict[str, Any]] | None = None,
     event_risk_rows_by_symbol: dict[str, dict[str, Any]] | None = None,
     market_row: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     symbol_metadata = symbol_metadata or {}
     symbol_news_rows_by_symbol = symbol_news_rows_by_symbol or {}
+    symbol_movement_rows_by_symbol = symbol_movement_rows_by_symbol or {}
     event_risk_rows_by_symbol = event_risk_rows_by_symbol or {}
     market_stress = _market_stress_level(market_row)
     for row in recommendation_rows:
@@ -235,6 +326,7 @@ def build_review_rows(
         disposition, reason_code = _review_disposition(row, intraday_actionable=intraday_actionable)
         metadata = symbol_metadata.get(scope_id, {})
         symbol_news_row = symbol_news_rows_by_symbol.get(scope_id, {})
+        symbol_movement_row = symbol_movement_rows_by_symbol.get(scope_id, {})
         event_risk_row = event_risk_rows_by_symbol.get(scope_id, {})
         sector = str(metadata.get("sector", "")).strip()
         direct_news = bool(metadata.get("direct_news", False))
@@ -384,13 +476,19 @@ def build_review_rows(
 
         recommended_action = str(row.get("recommended_action", "")).strip()
         recommendation_class = str(row.get("recommendation_class", "")).strip().lower()
+        movement_survivor_strength = _hostile_tape_survivor_strength(
+            symbol_movement_row=symbol_movement_row,
+            sector=sector,
+        )
+        thesis_survivor_strength = _hostile_tape_thesis_survivor_strength(
+            row=row,
+            symbol_news_row=symbol_news_row,
+            symbol_movement_row=symbol_movement_row,
+        )
+        survivor_promotable = movement_survivor_strength == "strong" or thesis_survivor_strength == "strong"
         if recommended_action == "Buy" and disposition == "promote":
             if market_stress == "high":
-                confidence = int(row.get("confidence_score", 0) or 0)
-                if (
-                    recommendation_class in {"mixed_strong_long", "mixed_weak_long", "aligned_long"}
-                    and confidence >= 70
-                ):
+                if survivor_promotable:
                     reason_code = "risk_off_survivor"
                 else:
                     disposition = "watch"
@@ -413,15 +511,21 @@ def build_review_rows(
                 "technology_thin_evidence",
                 "technology_probationary_modeled",
                 "energy_thin_evidence",
-                "energy_probationary_modeled",
             }:
-                confidence = int(row.get("confidence_score", 0) or 0)
-                if market_stress == "high" and confidence >= 70 and str(row.get("recommended_horizon", "")).strip() in {"1to2w", "2to6w"}:
+                if market_stress == "high" and survivor_promotable:
                     disposition = "promote"
                     reason_code = "risk_off_survivor"
                 else:
                     disposition = "watch"
                     reason_code = "market_stress_watch"
+        elif recommended_action == "Watch Buy" and market_stress == "high":
+            if (
+                movement_survivor_strength == "strong"
+                and int(row.get("confidence_score", 0) or 0) >= 66
+                and disposition in {"watch", "review_required"}
+            ):
+                disposition = "promote"
+                reason_code = "risk_off_survivor"
 
         review_bucket = _review_bucket(row, disposition, reason_code)
         raw_confidence = int(row.get("confidence_score", 0) or 0)

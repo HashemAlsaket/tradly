@@ -5,7 +5,7 @@
     "active_symbols": 57,
     "market_data_symbols": 88,
     "model_symbols": 57,
-    "direct_news_symbols": 62,
+    "direct_news_symbols": 54,
     "portfolio_eligible_symbols": 20
   },
   "scopes": {
@@ -346,14 +346,10 @@
       "ASML",
       "AVGO",
       "CAT",
-      "COST",
-      "CRM",
-      "CSCO",
       "CVX",
       "EWJ",
       "EWT",
       "FXI",
-      "GE",
       "GLD",
       "GOOGL",
       "HON",
@@ -366,15 +362,11 @@
       "LLY",
       "LMT",
       "LRCX",
-      "META",
       "MRK",
       "MSFT",
       "MU",
-      "NFLX",
       "NVDA",
       "NVTS",
-      "ORCL",
-      "PG",
       "QQQ",
       "SHY",
       "SMH",
@@ -854,34 +846,34 @@
       "modeled": [
         "AAPL",
         "ADBE",
+        "COST",
+        "CRM",
+        "CSCO",
         "DE",
         "DHR",
         "DIS",
         "EOG",
+        "GE",
         "ISRG",
+        "META",
+        "NFLX",
+        "ORCL",
         "PEP",
+        "PG",
         "PLTR",
         "SLB",
         "TMO"
       ],
       "modeled_with_direct_news": [
         "CAT",
-        "COST",
-        "CRM",
-        "CSCO",
         "CVX",
-        "GE",
         "GOOGL",
         "HON",
         "JNJ",
         "LLY",
         "LMT",
-        "META",
         "MRK",
         "MSFT",
-        "NFLX",
-        "ORCL",
-        "PG",
         "UNH",
         "WMT",
         "XOM"
@@ -903,10 +895,7 @@
         "TSM"
       ],
       "technology_core": [
-        "CRM",
-        "CSCO",
-        "MSFT",
-        "ORCL"
+        "MSFT"
       ],
       "healthcare_core": [
         "JNJ",
@@ -916,19 +905,14 @@
       ],
       "industrials_core": [
         "CAT",
-        "GE",
         "HON",
         "LMT"
       ],
       "consumer_defensive_core": [
-        "COST",
-        "PG",
         "WMT"
       ],
       "communication_services_core": [
-        "GOOGL",
-        "META",
-        "NFLX"
+        "GOOGL"
       ],
       "energy_core": [
         "CVX",

@@ -166,6 +166,32 @@ def _validate_record(row: dict) -> tuple[bool, str]:
     return True, ""
 
 
+def _sanitize_relevance_symbols(row: dict, *, allowed_symbols: list[str]) -> tuple[dict, str | None]:
+    normalized = dict(row)
+    allowed = {str(symbol).strip().upper() for symbol in allowed_symbols if str(symbol).strip()}
+    raw_symbols = row.get("relevance_symbols", [])
+    if not isinstance(raw_symbols, list):
+        return normalized, "relevance_symbols_invalid"
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in raw_symbols:
+        symbol = str(value).strip().upper()
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        if allowed and symbol not in allowed:
+            continue
+        deduped.append(symbol)
+
+    normalized["relevance_symbols"] = deduped
+    impact_scope = str(normalized.get("impact_scope", "")).strip()
+    bucket = str(normalized.get("bucket", "")).strip()
+    if impact_scope == "symbol_specific" and bucket == "symbol" and allowed and not deduped:
+        return normalized, "relevance_symbols_mismatch"
+    return normalized, None
+
+
 def _normalize_impact_scope(value: object) -> str:
     raw = str(value or "").strip().lower()
     if not raw:
@@ -478,6 +504,41 @@ def main() -> int:
                     if not provider or not news_id:
                         invalid_reason_counts["missing_provider_or_news_id"] = (
                             invalid_reason_counts.get("missing_provider_or_news_id", 0) + 1
+                        )
+                        continue
+                    batch_item = batch_by_key.get((provider, news_id), {})
+                    item, sanitize_reason = _sanitize_relevance_symbols(
+                        item,
+                        allowed_symbols=batch_item.get("symbols", []) if isinstance(batch_item, dict) else [],
+                    )
+                    if sanitize_reason is not None:
+                        invalid_reason_counts[sanitize_reason] = invalid_reason_counts.get(sanitize_reason, 0) + 1
+                        conn.execute(
+                            """
+                            INSERT INTO news_interpretation_rejections (
+                              provider, provider_news_id, model, prompt_version, rejection_reason, raw_impact_scope,
+                              raw_payload_json, normalized_payload_json, logged_at_utc, ingested_at_utc
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(provider, provider_news_id, model, prompt_version) DO UPDATE SET
+                              rejection_reason=excluded.rejection_reason,
+                              raw_impact_scope=excluded.raw_impact_scope,
+                              raw_payload_json=excluded.raw_payload_json,
+                              normalized_payload_json=excluded.normalized_payload_json,
+                              logged_at_utc=excluded.logged_at_utc,
+                              ingested_at_utc=excluded.ingested_at_utc
+                            """,
+                            (
+                                provider,
+                                news_id,
+                                model,
+                                PROMPT_VERSION,
+                                sanitize_reason,
+                                str(raw_item.get("impact_scope", "")).strip() if isinstance(raw_item, dict) else "",
+                                json.dumps(raw_item or {}, ensure_ascii=True),
+                                json.dumps(item, ensure_ascii=True),
+                                now_db_utc,
+                                now_db_utc,
+                            ),
                         )
                         continue
                     valid_by_key[(provider, news_id)] = item
