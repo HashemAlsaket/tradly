@@ -69,8 +69,31 @@ class RecommendationReviewTests(unittest.TestCase):
         self.assertEqual(by_scope["NVDA"]["review_bucket"], "contrarian_rebound")
         self.assertEqual(by_scope["QQQ"]["review_disposition"], "defer")
         self.assertEqual(by_scope["QQQ"]["review_bucket"], "deferred")
-        self.assertEqual(by_scope["NVDA_MIXED"]["review_disposition"], "review_required")
-        self.assertEqual(by_scope["NVDA_MIXED"]["review_bucket"], "manual_review")
+        self.assertEqual(by_scope["NVDA_MIXED"]["review_disposition"], "promote")
+        self.assertEqual(by_scope["NVDA_MIXED"]["review_bucket"], "top_longs")
+
+    def test_build_review_rows_promotes_mixed_weak_high_confidence_swing_long(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "AMD",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "mixed_weak_long",
+                    "evidence_balance_class": "mixed_weak",
+                    "regime_alignment": "mixed",
+                    "signal_direction": "bullish",
+                    "confidence_score": 67,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 15, 20, 0, 0),
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "mixed_cautious_actionable")
+        self.assertGreaterEqual(rows[0]["display_confidence_score"], 64)
+        self.assertLessEqual(rows[0]["display_confidence_score"], 72)
 
     def test_build_review_rows_promotes_mixed_strong_high_confidence_long(self) -> None:
         rows = build_review_rows(
@@ -115,6 +138,730 @@ class RecommendationReviewTests(unittest.TestCase):
         )
         self.assertEqual(rows[0]["review_disposition"], "defer")
         self.assertEqual(rows[0]["review_reason_code"], "intraday_freshness_not_ready")
+        self.assertLess(rows[0]["display_confidence_score"], rows[0]["confidence_score"])
+
+    def test_build_review_rows_display_confidence_is_state_aware(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "NVDA",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "2to6w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 78,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                },
+                {
+                    "scope_id": "MU",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "mixed_weak_long",
+                    "evidence_balance_class": "mixed_weak",
+                    "regime_alignment": "mixed",
+                    "signal_direction": "bullish",
+                    "confidence_score": 73,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                },
+                {
+                    "scope_id": "NKE",
+                    "recommended_action": "Sell/Trim",
+                    "recommended_horizon": "1to3d",
+                    "recommendation_class": "aligned_short",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bearish",
+                    "confidence_score": 85,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                },
+            ],
+            now_utc=datetime(2026, 3, 19, 16, 0, 0),
+            symbol_metadata={"MU": {"sector": "Technology", "industry": "Semiconductors", "direct_news": True}},
+            event_risk_rows_by_symbol={"MU": {"event_active": True, "hard_cap_buy_to_watch": True, "reaction_state": "beat_but_rejected", "reaction_severity": "medium"}},
+        )
+        by_scope = {row["scope_id"]: row for row in rows}
+        self.assertEqual(by_scope["NVDA"]["review_disposition"], "promote")
+        self.assertEqual(by_scope["NKE"]["review_disposition"], "promote")
+        self.assertEqual(by_scope["MU"]["review_disposition"], "watch")
+        self.assertLess(by_scope["MU"]["display_confidence_score"], by_scope["NVDA"]["display_confidence_score"])
+        self.assertLess(by_scope["MU"]["display_confidence_score"], by_scope["NKE"]["display_confidence_score"])
+        self.assertLessEqual(by_scope["NKE"]["display_confidence_score"], 74)
+
+    def test_healthcare_direct_news_thin_evidence_downgrades_promote(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "JNJ",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 76,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 18, 15, 0, 0),
+            symbol_metadata={
+                "JNJ": {
+                    "sector": "Healthcare",
+                    "industry": "Drug Manufacturers - General",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["core_leader", "pharma_defensive"],
+                }
+            },
+            symbol_news_rows_by_symbol={"JNJ": {"coverage_state": "thin_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "review_required")
+        self.assertEqual(rows[0]["review_reason_code"], "healthcare_thin_evidence")
+        self.assertEqual(rows[0]["sector_subtype"], "pharma_defensive")
+
+    def test_healthcare_tools_devices_promote_gets_specialized_reason(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "TMO",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 74,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 18, 15, 0, 0),
+            symbol_metadata={
+                "TMO": {
+                    "sector": "Healthcare",
+                    "industry": "Diagnostics & Research",
+                    "direct_news": False,
+                    "onboarding_stage": "modeled",
+                    "roles": ["quality_tools_devices"],
+                }
+            },
+            symbol_news_rows_by_symbol={},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "healthcare_tools_devices_actionable")
+        self.assertEqual(rows[0]["sector_subtype"], "quality_tools_devices")
+
+    def test_industrials_direct_news_thin_evidence_downgrades_promote(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "GE",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 76,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 4, 0, 0),
+            symbol_metadata={
+                "GE": {
+                    "sector": "Industrials",
+                    "industry": "Aerospace & Defense",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["core_leader", "aerospace_defense"],
+                }
+            },
+            symbol_news_rows_by_symbol={"GE": {"coverage_state": "thin_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "review_required")
+        self.assertEqual(rows[0]["review_reason_code"], "industrials_thin_evidence")
+        self.assertEqual(rows[0]["sector_subtype"], "aerospace_defense")
+
+    def test_industrials_promote_gets_specialized_reason(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "CAT",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 74,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 4, 0, 0),
+            symbol_metadata={
+                "CAT": {
+                    "sector": "Industrials",
+                    "industry": "Farm & Heavy Construction Machinery",
+                    "direct_news": False,
+                    "onboarding_stage": "modeled",
+                    "roles": ["core_leader", "heavy_equipment_capex"],
+                }
+            },
+            symbol_news_rows_by_symbol={},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "industrials_heavy_equipment_actionable")
+        self.assertEqual(rows[0]["sector_subtype"], "heavy_equipment_capex")
+
+    def test_consumer_defensive_direct_news_thin_evidence_downgrades_promote(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "WMT",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 76,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 4, 0, 0),
+            symbol_metadata={
+                "WMT": {
+                    "sector": "Consumer Defensive",
+                    "industry": "Discount Stores",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["core_leader", "membership_retail"],
+                }
+            },
+            symbol_news_rows_by_symbol={"WMT": {"coverage_state": "thin_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "review_required")
+        self.assertEqual(rows[0]["review_reason_code"], "consumer_defensive_thin_evidence")
+        self.assertEqual(rows[0]["sector_subtype"], "membership_retail")
+
+    def test_consumer_defensive_promote_gets_specialized_reason(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "PG",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 74,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 4, 0, 0),
+            symbol_metadata={
+                "PG": {
+                    "sector": "Consumer Defensive",
+                    "industry": "Household & Personal Products",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["core_leader", "household_personal_care"],
+                }
+            },
+            symbol_news_rows_by_symbol={"PG": {"coverage_state": "sufficient_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "consumer_defensive_household_actionable")
+        self.assertEqual(rows[0]["sector_subtype"], "household_personal_care")
+
+    def test_technology_direct_news_thin_evidence_downgrades_promote(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "MSFT",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "2to6w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 76,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 17, 0, 0),
+            symbol_metadata={
+                "MSFT": {
+                    "sector": "Technology",
+                    "industry": "Software - Infrastructure",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["sector_leader", "cloud_platforms"],
+                }
+            },
+            symbol_news_rows_by_symbol={"MSFT": {"coverage_state": "thin_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "review_required")
+        self.assertEqual(rows[0]["review_reason_code"], "technology_thin_evidence")
+        self.assertEqual(rows[0]["sector_subtype"], "cloud_platforms")
+
+    def test_technology_promote_gets_specialized_reason(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "CSCO",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 72,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 17, 0, 0),
+            symbol_metadata={
+                "CSCO": {
+                    "sector": "Technology",
+                    "industry": "Communication Equipment",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["sector_leader", "networking_infrastructure"],
+                }
+            },
+            symbol_news_rows_by_symbol={"CSCO": {"coverage_state": "sufficient_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "technology_networking_actionable")
+        self.assertEqual(rows[0]["sector_subtype"], "networking_infrastructure")
+
+    def test_energy_direct_news_thin_evidence_downgrades_promote(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "CVX",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 76,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 18, 0, 0),
+            symbol_metadata={
+                "CVX": {
+                    "sector": "Energy",
+                    "industry": "Oil & Gas Integrated",
+                    "direct_news": True,
+                    "onboarding_stage": "modeled_with_direct_news",
+                    "roles": ["sector_leader", "integrated_majors"],
+                }
+            },
+            symbol_news_rows_by_symbol={"CVX": {"coverage_state": "thin_evidence"}},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "review_required")
+        self.assertEqual(rows[0]["review_reason_code"], "energy_thin_evidence")
+        self.assertEqual(rows[0]["sector_subtype"], "integrated_majors")
+
+    def test_energy_promote_gets_specialized_reason(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "SLB",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 72,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 18, 0, 0),
+            symbol_metadata={
+                "SLB": {
+                    "sector": "Energy",
+                    "industry": "Oil & Gas Equipment & Services",
+                    "direct_news": False,
+                    "onboarding_stage": "modeled",
+                    "roles": ["sector_leader", "energy_services"],
+                }
+            },
+            symbol_news_rows_by_symbol={},
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "energy_services_actionable")
+        self.assertEqual(rows[0]["sector_subtype"], "energy_services")
+
+    def test_event_risk_caps_buy_to_watch(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "MU",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to3d",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 81,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 2, 0, 0),
+            event_risk_rows_by_symbol={
+                "MU": {
+                    "event_active": True,
+                    "reaction_state": "beat_but_rejected",
+                    "reaction_severity": "high",
+                    "action_bias": "downgrade",
+                    "hard_cap_buy_to_watch": True,
+                }
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "watch")
+        self.assertEqual(rows[0]["review_reason_code"], "event_buy_capped_to_watch")
+        self.assertEqual(rows[0]["event_reaction_state"], "beat_but_rejected")
+        self.assertEqual(rows[0]["review_bucket"], "watch_event_damaged")
+
+    def test_market_stress_turns_marginal_promote_into_review_required(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "CVX",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "aligned_long",
+                    "evidence_balance_class": "aligned_strong",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 68,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 3, 0, 0),
+            market_row={
+                "signal_direction": "bearish",
+                "confidence_score": 73,
+                "why_code": ["vix_elevated", "macro_rates_pressure", "macro_energy_stress"],
+                "evidence": {"macro_hostility": {"macro_state": "risk_off"}},
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "watch")
+        self.assertEqual(rows[0]["review_reason_code"], "market_stress_watch")
+        self.assertEqual(rows[0]["market_stress_level"], "high")
+        self.assertEqual(rows[0]["review_bucket"], "watch_tape_blocked")
+
+    def test_market_stress_keeps_strong_survivor_promoted(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "NVDA",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "2to6w",
+                    "recommendation_class": "mixed_strong_long",
+                    "evidence_balance_class": "mixed_strong",
+                    "regime_alignment": "mixed",
+                    "signal_direction": "bullish",
+                    "confidence_score": 78,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 3, 0, 0),
+            symbol_movement_rows_by_symbol={
+                "NVDA": {
+                    "scope_id": "NVDA",
+                    "signal_direction": "bullish",
+                    "confidence_score": 82,
+                    "evidence": {
+                        "relative_vs_market_20d": 0.08,
+                        "sector_relative_20d": 0.03,
+                        "intraday_overlay": {
+                            "symbol_intraday_overlay_state": "confirming",
+                            "relative_intraday_vs_market_pct": 0.01,
+                            "relative_intraday_vs_sector_pct": 0.002,
+                        },
+                    },
+                }
+            },
+            market_row={
+                "signal_direction": "bearish",
+                "confidence_score": 73,
+                "why_code": ["vix_elevated", "macro_rates_pressure", "macro_energy_stress"],
+                "evidence": {"macro_hostility": {"macro_state": "risk_off"}},
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "risk_off_survivor")
+
+    def test_market_stress_can_promote_high_confidence_mixed_review_required_buy(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "EOG",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "2to6w",
+                    "recommendation_class": "mixed_weak_long",
+                    "evidence_balance_class": "mixed_weak",
+                    "regime_alignment": "mixed",
+                    "signal_direction": "bullish",
+                    "confidence_score": 72,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 19, 3, 0, 0),
+            symbol_metadata={
+                "EOG": {
+                    "sector": "Energy",
+                    "industry": "Oil & Gas E&P",
+                    "direct_news": False,
+                    "onboarding_stage": "modeled",
+                    "roles": ["upstream_ep"],
+                }
+            },
+            symbol_movement_rows_by_symbol={
+                "EOG": {
+                    "scope_id": "EOG",
+                    "signal_direction": "bullish",
+                    "confidence_score": 87,
+                    "evidence": {
+                        "relative_vs_market_20d": 0.15,
+                        "sector_relative_20d": 0.04,
+                        "intraday_overlay": {
+                            "symbol_intraday_overlay_state": "fading",
+                            "relative_intraday_vs_market_pct": 0.006,
+                            "relative_intraday_vs_sector_pct": 0.001,
+                        },
+                    },
+                }
+            },
+            market_row={
+                "signal_direction": "bearish",
+                "confidence_score": 79,
+                "why_code": ["vix_elevated", "macro_rates_pressure", "macro_energy_stress"],
+                "evidence": {"macro_hostility": {"macro_state": "risk_off"}},
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "risk_off_survivor")
+
+    def test_market_stress_can_promote_thesis_survivor_with_tolerable_movement_damage(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "NVDA",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "2to6w",
+                    "recommendation_class": "mixed_weak_long",
+                    "evidence_balance_class": "mixed_weak",
+                    "regime_alignment": "mixed",
+                    "signal_direction": "bullish",
+                    "confidence_score": 72,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 20, 22, 0, 0),
+            symbol_news_rows_by_symbol={
+                "NVDA": {
+                    "coverage_state": "sufficient_evidence",
+                    "signal_direction": "bullish",
+                    "confidence_score": 85,
+                }
+            },
+            symbol_movement_rows_by_symbol={
+                "NVDA": {
+                    "scope_id": "NVDA",
+                    "signal_direction": "bearish",
+                    "confidence_score": 64,
+                    "evidence": {
+                        "relative_vs_market_20d": -0.034,
+                        "intraday_overlay": {
+                            "symbol_intraday_overlay_state": "mixed",
+                            "relative_intraday_vs_market_pct": -0.009,
+                            "relative_intraday_vs_sector_pct": -0.004,
+                        },
+                    },
+                }
+            },
+            market_row={
+                "signal_direction": "bearish",
+                "confidence_score": 79,
+                "why_code": ["vix_elevated", "macro_rates_pressure", "macro_energy_stress"],
+                "evidence": {"macro_hostility": {"macro_state": "risk_off"}},
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "risk_off_survivor")
+
+    def test_market_stress_demotes_weak_defensive_buy_without_survivor_movement(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "JNJ",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "mixed_weak_long",
+                    "evidence_balance_class": "mixed_weak",
+                    "regime_alignment": "mixed",
+                    "signal_direction": "bullish",
+                    "confidence_score": 71,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 20, 20, 0, 0),
+            symbol_metadata={
+                "JNJ": {
+                    "sector": "Healthcare",
+                    "industry": "Drug Manufacturers - General",
+                    "direct_news": False,
+                    "onboarding_stage": "modeled",
+                    "roles": ["pharma_defensive"],
+                }
+            },
+            symbol_movement_rows_by_symbol={
+                "JNJ": {
+                    "scope_id": "JNJ",
+                    "signal_direction": "bullish",
+                    "confidence_score": 60,
+                    "evidence": {
+                        "relative_vs_market_20d": -0.005,
+                        "sector_relative_20d": 0.03,
+                        "intraday_overlay": {
+                            "symbol_intraday_overlay_state": "fading",
+                            "relative_intraday_vs_market_pct": 0.006,
+                            "relative_intraday_vs_sector_pct": -0.003,
+                        },
+                    },
+                }
+            },
+            market_row={
+                "signal_direction": "bearish",
+                "confidence_score": 79,
+                "why_code": ["vix_elevated", "macro_rates_pressure", "macro_energy_stress"],
+                "evidence": {"macro_hostility": {"macro_state": "risk_off"}},
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "watch")
+        self.assertEqual(rows[0]["review_reason_code"], "market_stress_watch")
+        self.assertEqual(rows[0]["review_bucket"], "watch_tape_blocked")
+
+    def test_market_stress_blocks_thesis_name_when_movement_is_too_broken(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "AVGO",
+                    "recommended_action": "Buy",
+                    "recommended_horizon": "1to2w",
+                    "recommendation_class": "mixed_weak_long",
+                    "evidence_balance_class": "mixed_weak",
+                    "regime_alignment": "mixed",
+                    "signal_direction": "bullish",
+                    "confidence_score": 68,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 20, 22, 0, 0),
+            symbol_news_rows_by_symbol={
+                "AVGO": {
+                    "coverage_state": "sufficient_evidence",
+                    "signal_direction": "bullish",
+                    "confidence_score": 82,
+                }
+            },
+            symbol_movement_rows_by_symbol={
+                "AVGO": {
+                    "scope_id": "AVGO",
+                    "signal_direction": "bearish",
+                    "confidence_score": 78,
+                    "evidence": {
+                        "relative_vs_market_20d": -0.06,
+                        "intraday_overlay": {
+                            "symbol_intraday_overlay_state": "mixed",
+                            "relative_intraday_vs_market_pct": -0.016,
+                            "relative_intraday_vs_sector_pct": -0.009,
+                        },
+                    },
+                }
+            },
+            market_row={
+                "signal_direction": "bearish",
+                "confidence_score": 79,
+                "why_code": ["vix_elevated", "macro_rates_pressure", "macro_energy_stress"],
+                "evidence": {"macro_hostility": {"macro_state": "risk_off"}},
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "watch")
+        self.assertEqual(rows[0]["review_reason_code"], "market_stress_watch")
+
+    def test_market_stress_can_promote_watch_buy_with_strong_movement_survivor(self) -> None:
+        rows = build_review_rows(
+            recommendation_rows=[
+                {
+                    "scope_id": "CVX",
+                    "recommended_action": "Watch Buy",
+                    "recommended_horizon": "1to3d",
+                    "recommendation_class": "watch_long",
+                    "evidence_balance_class": "aligned_lean",
+                    "regime_alignment": "aligned",
+                    "signal_direction": "bullish",
+                    "confidence_score": 68,
+                    "execution_ready": True,
+                    "source_state": "actionable",
+                }
+            ],
+            now_utc=datetime(2026, 3, 20, 22, 0, 0),
+            symbol_movement_rows_by_symbol={
+                "CVX": {
+                    "scope_id": "CVX",
+                    "signal_direction": "bullish",
+                    "confidence_score": 87,
+                    "evidence": {
+                        "relative_vs_market_20d": 0.12,
+                        "sector_relative_20d": 0.01,
+                        "intraday_overlay": {
+                            "symbol_intraday_overlay_state": "confirming",
+                            "relative_intraday_vs_market_pct": 0.012,
+                            "relative_intraday_vs_sector_pct": 0.003,
+                        },
+                    },
+                }
+            },
+            market_row={
+                "signal_direction": "bearish",
+                "confidence_score": 79,
+                "why_code": ["vix_elevated", "macro_rates_pressure", "macro_energy_stress"],
+                "evidence": {"macro_hostility": {"macro_state": "risk_off"}},
+            },
+        )
+        self.assertEqual(rows[0]["review_disposition"], "promote")
+        self.assertEqual(rows[0]["review_reason_code"], "risk_off_survivor")
+        self.assertEqual(rows[0]["review_bucket"], "top_longs")
 
 
 if __name__ == "__main__":

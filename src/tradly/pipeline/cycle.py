@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from tradly.ops.freshness_snapshot import run_and_write_runtime_freshness_snapshot
 from tradly.paths import get_repo_root
+from tradly.services.time_context import NOW_UTC_OVERRIDE_ENV
 
 
 PREFLIGHT_MODULE = "tradly.ops.preflight_catchup"
@@ -26,10 +27,12 @@ STEPS = [
     ("run_range_expectation", "tradly.pipeline.run_range_expectation"),
     ("run_ensemble", "tradly.pipeline.run_ensemble"),
     ("run_recommendation", "tradly.pipeline.run_recommendation"),
+    ("run_event_risk", "tradly.pipeline.run_event_risk"),
     ("run_recommendation_scorecard", "tradly.pipeline.run_recommendation_scorecard"),
     ("run_recommendation_scorecard_history", "tradly.pipeline.run_recommendation_scorecard_history"),
     ("run_recommendation_review", "tradly.pipeline.run_recommendation_review"),
     ("run_portfolio_policy", "tradly.pipeline.run_portfolio_policy"),
+    ("run_universe_onboarding_audit", "tradly.pipeline.run_universe_onboarding_audit"),
 ]
 
 
@@ -61,6 +64,7 @@ def main() -> int:
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = "src" if not existing_pythonpath else f"src:{existing_pythonpath}"
+    env.setdefault(NOW_UTC_OVERRIDE_ENV, cycle_started_at_utc.isoformat())
 
     if env.get(SKIP_PREFLIGHT_ENV) == "1":
         print("step_skipped=preflight_catchup reason=env_skip")

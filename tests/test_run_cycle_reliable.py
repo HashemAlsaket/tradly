@@ -21,6 +21,50 @@ def _load_module():
 
 
 class RunCycleReliableTests(unittest.TestCase):
+    def test_validate_postflight_snapshot_skips_staleness_for_frozen_time_runs(self) -> None:
+        module = _load_module()
+        started_at = datetime(2026, 3, 20, 18, 22, 7, tzinfo=timezone.utc)
+        ended_at = datetime(2026, 3, 20, 18, 24, 59, tzinfo=timezone.utc)
+        snapshot_payload = {
+            "written_at_utc": "2026-03-20T18:25:00.220082+00:00",
+            "freshness": {
+                "as_of_utc": "2026-03-20T18:25:00.210000+00:00",
+            },
+        }
+
+        freshness_rc, reason = module._validate_postflight_snapshot(
+            snapshot_payload=snapshot_payload,
+            started_at=started_at,
+            ended_at=ended_at,
+            now_utc=datetime(2026, 3, 20, 19, 30, 0, tzinfo=timezone.utc),
+            frozen_time_run=True,
+        )
+
+        self.assertEqual(freshness_rc, 0)
+        self.assertIsNone(reason)
+
+    def test_validate_postflight_snapshot_enforces_staleness_for_non_frozen_runs(self) -> None:
+        module = _load_module()
+        started_at = datetime(2026, 3, 20, 18, 22, 7, tzinfo=timezone.utc)
+        ended_at = datetime(2026, 3, 20, 18, 24, 59, tzinfo=timezone.utc)
+        snapshot_payload = {
+            "written_at_utc": "2026-03-20T18:25:00.220082+00:00",
+            "freshness": {
+                "as_of_utc": "2026-03-20T18:25:00.210000+00:00",
+            },
+        }
+
+        freshness_rc, reason = module._validate_postflight_snapshot(
+            snapshot_payload=snapshot_payload,
+            started_at=started_at,
+            ended_at=ended_at,
+            now_utc=datetime(2026, 3, 20, 19, 30, 0, tzinfo=timezone.utc),
+            frozen_time_run=False,
+        )
+
+        self.assertIsNone(freshness_rc)
+        self.assertEqual(reason, "postflight_snapshot_timestamp_stale")
+
     def test_reads_cycle_written_snapshot_instead_of_rewriting_it(self) -> None:
         module = _load_module()
         with tempfile.TemporaryDirectory() as tmpdir:

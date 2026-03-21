@@ -5,11 +5,39 @@
   "daily_request_budget": 2500,
   "bucket_daily_caps": {
     "core_semis": 1200,
+    "technology_core": 300,
+    "healthcare_core": 300,
+    "industrials_core": 300,
+    "consumer_defensive_core": 300,
+    "communication_services_core": 300,
+    "energy_core": 300,
     "us_macro": 500,
     "asia_semis": 300,
     "asia_macro": 200,
     "sector_context": 200,
     "event_reserve": 100
+  },
+  "bucket_request_overrides": {
+    "technology_core": {
+      "limit_per_request": 5,
+      "pulls_per_bucket_per_run": 2
+    },
+    "industrials_core": {
+      "limit_per_request": 5,
+      "pulls_per_bucket_per_run": 2
+    },
+    "consumer_defensive_core": {
+      "limit_per_request": 5,
+      "pulls_per_bucket_per_run": 2
+    },
+    "communication_services_core": {
+      "limit_per_request": 5,
+      "pulls_per_bucket_per_run": 2
+    },
+    "energy_core": {
+      "limit_per_request": 5,
+      "pulls_per_bucket_per_run": 2
+    }
   },
   "max_pages_per_bucket": 300,
   "buckets": {
@@ -26,6 +54,30 @@
       "NVTS",
       "SNDK",
       "TSM"
+    ],
+    "technology_core": [
+      "MSFT"
+    ],
+    "healthcare_core": [
+      "JNJ",
+      "LLY",
+      "MRK",
+      "UNH"
+    ],
+    "industrials_core": [
+      "CAT",
+      "HON",
+      "LMT"
+    ],
+    "consumer_defensive_core": [
+      "WMT"
+    ],
+    "communication_services_core": [
+      "GOOGL"
+    ],
+    "energy_core": [
+      "CVX",
+      "XOM"
     ],
     "us_macro": [
       "ARKK",
@@ -68,7 +120,6 @@
       "XLP",
       "XLRE",
       "XLU",
-      "XLV",
       "XLY",
       "XSD"
     ],

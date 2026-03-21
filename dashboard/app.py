@@ -296,6 +296,22 @@ def _load_latest_run_artifact(filename: str) -> tuple[dict, Path | None]:
     return _load_json_file(path), path if path.exists() else path
 
 
+def _latest_cycle_failed(freshness_snapshot: dict, latest_cycle_run: dict) -> bool:
+    snapshot_overall = str(freshness_snapshot.get("overall_status", "UNKNOWN")).strip().upper()
+    cycle_status = str(latest_cycle_run.get("status", "UNKNOWN")).strip().upper()
+    if snapshot_overall == "FAIL":
+        return True
+    if cycle_status != "FAIL":
+        return False
+    cycle_started = _parse_dt(latest_cycle_run.get("started_at_utc"))
+    snapshot_written = _parse_dt(freshness_snapshot.get("written_at_utc"))
+    if cycle_started is None:
+        return True
+    if snapshot_written is None:
+        return True
+    return snapshot_written < cycle_started
+
+
 def _quality_status(payload: dict) -> str:
     quality = payload.get("quality_audit", {})
     if not isinstance(quality, dict):
@@ -455,6 +471,8 @@ def _market_status_copy(freshness: dict[str, Any], metrics: dict[str, Any], now_
         return "Closed weekend", f"Last cash session { _fmt_session_date(last_cash_session) }"
     if session == "holiday":
         return "Closed holiday", f"Last cash session { _fmt_session_date(last_cash_session) }"
+    if session == "overnight":
+        return "Overnight", f"Last cash session { _fmt_session_date(last_cash_session) }"
     if session == "pre_market":
         return "Pre-market", f"Last cash session { _fmt_session_date(last_cash_session) }"
     if session == "after_hours":
@@ -473,7 +491,10 @@ def _market_tape_caution(market_payload: dict[str, Any] | None) -> str:
     row = rows[0] if isinstance(rows[0], dict) else {}
     signal = str(row.get("signal_direction", "")).strip().lower()
     confidence = int(row.get("confidence_score", 0) or 0)
+    why_codes = {str(code).strip().lower() for code in row.get("why_code", []) if str(code).strip()}
     if signal == "bearish" and confidence >= 55:
+        if {"vix_elevated", "macro_rates_pressure", "macro_energy_stress"} & why_codes:
+            return "Hostile tape"
         return "Macro unstable"
     if signal == "neutral":
         return "Macro mixed"
@@ -496,9 +517,30 @@ def _action_section_blurb(title: str, market_payload: dict[str, Any] | None = No
     evidence = rows[0].get("evidence")
     macro_hostility = evidence.get("macro_hostility") if isinstance(evidence, dict) else None
     macro_state = str(macro_hostility.get("macro_state", "")).strip().lower() if isinstance(macro_hostility, dict) else ""
+    signal = str(rows[0].get("signal_direction", "")).strip().lower()
+    confidence = int(rows[0].get("confidence_score", 0) or 0)
     if macro_state in {"risk_off", "macro_unstable"}:
+        if signal == "bearish" and confidence >= 70:
+            return "Only the strongest survivors. Hostile tape, stay selective."
         return "Bullish setups, macro not confirmed."
     return "Best bullish setups."
+
+
+def _market_stress_level(market_payload: dict[str, Any] | None) -> str:
+    if not isinstance(market_payload, dict):
+        return "low"
+    rows = market_payload.get("rows")
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        return "low"
+    row = rows[0]
+    signal = str(row.get("signal_direction", "")).strip().lower()
+    confidence = int(row.get("confidence_score", 0) or 0)
+    why_codes = {str(code).strip().lower() for code in row.get("why_code", []) if str(code).strip()}
+    if signal == "bearish" and confidence >= 70 and {"vix_elevated", "macro_rates_pressure", "macro_energy_stress"} & why_codes:
+        return "high"
+    if signal == "bearish" and confidence >= 60:
+        return "medium"
+    return "low"
 
 
 def _freshness_brief(value: Any, now_utc: datetime) -> str:
@@ -663,8 +705,46 @@ def _humanize_reason(code: str) -> str:
         "range expanding conviction reduced": "wide range",
         "market closed weekend": "market closed for weekend",
         "market closed holiday": "market closed for holiday",
+        "event buy capped to watch": "event damaged; wait for confirmation",
+        "event reaction damage": "event damage; reassess before acting",
+        "event reaction caution": "event caution; let reaction settle",
+        "market stress watch": "high-quality name blocked by hostile tape",
+        "mixed cautious actionable": "cautious but actionable",
+        "risk off survivor": "surviving long despite hostile tape",
+        "recommendation not actionable": "not actionable yet",
+        "healthcare probationary modeled": "newly onboarded; keep on watch",
+        "healthcare thin evidence": "thin evidence; wait for confirmation",
     }
     return replacements.get(text, text)
+
+
+def _humanize_bucket(code: str) -> str:
+    text = str(code).strip()
+    return {
+        "top_longs": "Top Long",
+        "top_shorts": "Top Short",
+        "top_ideas": "Top Idea",
+        "contrarian_review": "Contrarian Review",
+        "contrarian_rebound": "Contrarian Rebound",
+        "review_high_priority": "High-Priority Review",
+        "manual_review": "Manual Review",
+        "watch_event_damaged": "Watch - Event Damaged",
+        "watch_tape_blocked": "Watch - Tape Blocked",
+        "watch_needs_confirmation": "Watch - Needs Confirmation",
+        "deferred": "Deferred",
+        "blocked": "Blocked",
+    }.get(text, text.replace("_", " ").title())
+
+
+def _watch_bucket_title(bucket: str) -> str:
+    return {
+        "watch_event_damaged": "Watch - Damaged",
+        "watch_tape_blocked": "Watch - Tape Blocked",
+        "watch_needs_confirmation": "Watch - Needs Confirmation",
+        "review_high_priority": "Review - High Priority",
+        "manual_review": "Review - Manual",
+        "deferred": "Deferred",
+    }.get(str(bucket).strip(), "Watch")
 
 
 def _format_horizon_label(horizon: str) -> str:
@@ -694,15 +774,22 @@ def _decision_rows(review_payload: dict) -> list[dict[str, Any]]:
         out.append(
             {
                 "Symbol": str(row.get("symbol") or row.get("scope_id", "UNSET")),
+                "Sector": str(row.get("sector", "UNSET")),
                 "Action": str(row.get("recommended_action", "Unknown")),
                 "Horizon": str(row.get("recommended_horizon", "UNSET")),
-                "Confidence": int(row.get("confidence_score", 0) or 0),
+                "Confidence": int(row.get("display_confidence_score", row.get("confidence_score", 0)) or 0),
+                "RawConfidence": int(row.get("confidence_score", 0) or 0),
                 "Reason": _humanize_reason(str(row.get("primary_reason_code", ""))),
                 "ExecutionReady": bool(row.get("execution_ready", True)),
                 "RecommendationClass": str(row.get("recommendation_class", "unknown")),
                 "ReviewDisposition": str(row.get("review_disposition", "watch")),
-                "ReviewBucket": str(row.get("review_bucket", "watchlist")),
+                "ReviewBucket": str(row.get("review_bucket", "watch_needs_confirmation")),
+                "ReviewState": _humanize_bucket(str(row.get("review_bucket", "watch_needs_confirmation"))),
                 "ReviewReason": str(row.get("review_reason_code", "")),
+                "ReviewReasonText": _humanize_reason(str(row.get("review_reason_code", ""))),
+                "EventActive": bool(row.get("event_active", False)),
+                "EventReaction": str(row.get("event_reaction_state", "")),
+                "MarketStress": str(row.get("market_stress_level", "")),
             }
         )
     return sorted(
@@ -710,7 +797,7 @@ def _decision_rows(review_payload: dict) -> list[dict[str, Any]]:
         key=lambda row: (
             {"promote": 3, "review_required": 2, "watch": 1, "defer": 0, "blocked": -1}.get(str(row["ReviewDisposition"]), -1),
             action_priority(str(row["Action"])),
-            int(row["Confidence"]),
+            int(row["RawConfidence"]),
         ),
         reverse=True,
     )
@@ -722,24 +809,26 @@ def _render_action_list(title: str, rows: list[dict[str, Any]], market_payload: 
         "Sell / Trim": "sell",
         "Watch": "watch",
     }.get(title, "watch")
-    st.markdown(
-        f'<div class="tradly-section-title {section_class}">{title}</div>',
-        unsafe_allow_html=True,
-    )
-    blurb = _action_section_blurb(title, market_payload)
-    if blurb:
-        st.markdown(f'<div class="tradly-section-subtle">{blurb}</div>', unsafe_allow_html=True)
+    if title:
+        st.markdown(
+            f'<div class="tradly-section-title {section_class}">{title}</div>',
+            unsafe_allow_html=True,
+        )
+        blurb = _action_section_blurb(title, market_payload)
+        if blurb:
+            st.markdown(f'<div class="tradly-section-subtle">{blurb}</div>', unsafe_allow_html=True)
     if not rows:
         st.caption("None")
         return
-    st.markdown(f'<div class="tradly-section-subtle">{len(rows)} shown</div>', unsafe_allow_html=True)
+    if title:
+        st.markdown(f'<div class="tradly-section-subtle">{len(rows)} shown</div>', unsafe_allow_html=True)
 
     def _render_rows(group_rows: list[dict[str, Any]]) -> None:
         for row in group_rows:
             symbol = str(row["Symbol"])
             horizon = str(row["Horizon"])
             confidence = int(row["Confidence"])
-            reason = str(row["Reason"]).strip()
+            reason = str(row.get("ReviewReasonText") or row["Reason"]).strip()
             execution_ready = bool(row.get("ExecutionReady", True))
             horizon_label = _format_horizon_label(horizon)
             lane_name = _horizon_lane_name(horizon)
@@ -766,11 +855,37 @@ def _render_action_list(title: str, rows: list[dict[str, Any]], market_payload: 
     _render_rows(rows)
 
 
+def _render_watch_groups(rows: list[dict[str, Any]], market_payload: dict[str, Any] | None = None) -> None:
+    st.markdown('<div class="tradly-section-title watch">Watch</div>', unsafe_allow_html=True)
+    blurb = _action_section_blurb("Watch", market_payload)
+    if blurb:
+        st.markdown(f'<div class="tradly-section-subtle">{blurb}</div>', unsafe_allow_html=True)
+    if not rows:
+        st.caption("None")
+        return
+    st.markdown(f'<div class="tradly-section-subtle">{len(rows)} shown</div>', unsafe_allow_html=True)
+    ordered_buckets = [
+        "watch_event_damaged",
+        "watch_tape_blocked",
+        "watch_needs_confirmation",
+        "review_high_priority",
+        "manual_review",
+        "deferred",
+    ]
+    for bucket in ordered_buckets:
+        bucket_rows = [row for row in rows if str(row.get("ReviewBucket")) == bucket]
+        if not bucket_rows:
+            continue
+        st.caption(_watch_bucket_title(bucket))
+        _render_action_list("", bucket_rows, market_payload)
+
+
 def _render_action_board(review_payload: dict, market_payload: dict[str, Any] | None = None) -> None:
     ranked_rows = _decision_rows(review_payload)
     if not ranked_rows:
         st.caption("No decisions available.")
         return
+    market_stress = _market_stress_level(market_payload)
     promote_or_review_sell = {
         str(row["Symbol"])
         for row in ranked_rows
@@ -781,14 +896,17 @@ def _render_action_board(review_payload: dict, market_payload: dict[str, Any] | 
             row
             for row in ranked_rows
             if str(row["Action"]) == "Buy"
-            and str(row["ReviewDisposition"]) in {"promote", "review_required"}
+            and (
+                str(row["ReviewDisposition"]) == "promote"
+                or (market_stress == "low" and str(row["ReviewDisposition"]) == "review_required")
+            )
         ],
         key=lambda row: (
             1 if str(row["ReviewDisposition"]) == "promote" else 0,
             int(row["Confidence"]),
         ),
         reverse=True,
-    )[:6]
+    )[: (4 if market_stress == "high" else 6)]
     sell_rows = sorted(
         [
             row
@@ -808,7 +926,10 @@ def _render_action_board(review_payload: dict, market_payload: dict[str, Any] | 
             if str(row["ReviewDisposition"]) in {"watch", "defer"}
             or (
                 str(row["ReviewDisposition"]) == "review_required"
-                and str(row["Action"]) not in {"Buy", "Sell/Trim"}
+                and (
+                    str(row["Action"]) not in {"Buy", "Sell/Trim"}
+                    or market_stress in {"medium", "high"}
+                )
                 and str(row["Symbol"]) not in promote_or_review_sell
             )
         ],
@@ -821,7 +942,7 @@ def _render_action_board(review_payload: dict, market_payload: dict[str, Any] | 
     with c2:
         _render_action_list("Sell / Trim", sell_rows, market_payload)
     with c3:
-        _render_action_list("Watch", watch_rows, market_payload)
+        _render_watch_groups(watch_rows, market_payload)
 
 
 def _portfolio_rows(payload: dict) -> list[dict[str, Any]]:
@@ -1047,15 +1168,24 @@ def _render_ensemble_summary(payload: dict) -> None:
 
 
 def _render_symbol_stack(review_payload: dict) -> None:
-    top_symbols = _decision_rows(review_payload)[:12]
+    top_symbols = _decision_rows(review_payload)
+    if not top_symbols:
+        st.caption("No modeled symbols available.")
+        return
+    st.markdown("**Modeled Universe**")
     table_rows = []
     for row in top_symbols:
         table_rows.append(
             {
                 "Symbol": row["Symbol"],
+                "Sector": row["Sector"],
                 "Action": row["Action"],
                 "Horizon": row["Horizon"],
                 "Confidence": row["Confidence"],
+                "State": row["ReviewState"],
+                "Review Reason": row["ReviewReasonText"],
+                "Event": row["EventReaction"] if row["EventActive"] else "",
+                "Market Stress": row["MarketStress"],
                 "Why": row["Reason"],
             }
         )
@@ -1140,6 +1270,10 @@ def main() -> None:
     latest_failure_notice = _latest_cycle_failure_notice(freshness_snapshot, latest_cycle_run)
     if latest_failure_notice:
         st.error(latest_failure_notice)
+    failed_cycle_decisions = _latest_cycle_failed(freshness_snapshot, latest_cycle_run)
+    if failed_cycle_decisions:
+        review_payload = {}
+        recommendation_payload = {}
 
     freshness = freshness_snapshot.get("freshness", {}) if isinstance(freshness_snapshot, dict) else {}
     metrics = freshness.get("metrics", {}) if isinstance(freshness, dict) else {}
@@ -1149,7 +1283,7 @@ def main() -> None:
         st.markdown('<div class="tradly-utility-box">', unsafe_allow_html=True)
         section = st.selectbox(
             "Navigate",
-            ["Decisions", "Portfolio", "Market", "System"],
+            ["Decisions", "Universe", "Portfolio", "Market", "System"],
             index=0,
             label_visibility="collapsed",
             key="top_nav",
@@ -1193,9 +1327,13 @@ def main() -> None:
         st.success("Ready")
 
     if section == "Decisions":
+        if failed_cycle_decisions:
+            st.caption("Decisions withheld because the latest cycle failed postflight validation.")
         _render_action_board(review_payload if review_payload else recommendation_payload, market_payload)
         if show_more_symbols:
             _render_symbol_stack(review_payload if review_payload else recommendation_payload)
+    elif section == "Universe":
+        _render_symbol_stack(review_payload if review_payload else recommendation_payload)
     elif section == "Portfolio":
         _render_portfolio_policy(portfolio_payload)
     elif section == "Market":

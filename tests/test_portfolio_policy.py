@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import unittest
 
 from dashboard.app import _portfolio_rows
-from tradly.models.portfolio_policy import build_portfolio_policy, validate_portfolio_snapshot
+from tradly.models.portfolio_policy import _theme_from_symbol_meta, build_portfolio_policy, validate_portfolio_snapshot
 
 
 def _market_payload(*, macro_state: str = "macro_unstable", signal_direction: str = "bearish", confidence: int = 80) -> dict:
@@ -198,7 +198,25 @@ def _review_payload() -> dict:
     }
 
 
+def _event_risk_payload() -> dict:
+    return {"rows": []}
+
+
 class PortfolioPolicyTests(unittest.TestCase):
+    def test_healthcare_is_first_class_theme_not_generic_defensive(self) -> None:
+        self.assertEqual(
+            _theme_from_symbol_meta(
+                {
+                    "asset_type": "stock",
+                    "sector": "Healthcare",
+                    "industry": "Drug Manufacturers - General",
+                    "roles": ["core_leader", "pharma_defensive"],
+                },
+                "JNJ",
+            ),
+            "healthcare",
+        )
+
     def test_snapshot_validation_flags_invalid_nav_and_unmanaged(self) -> None:
         validation = validate_portfolio_snapshot(
             {
@@ -228,6 +246,7 @@ class PortfolioPolicyTests(unittest.TestCase):
             market_regime_payload=_market_payload(),
             recommendation_payload=_recommendation_payload(),
             review_payload=_review_payload(),
+            event_risk_payload=_event_risk_payload(),
             freshness_snapshot=_freshness_snapshot(),
             portfolio_snapshot=_portfolio_snapshot(),
             universe_registry=_universe_registry(),
@@ -257,6 +276,7 @@ class PortfolioPolicyTests(unittest.TestCase):
             market_regime_payload=_market_payload(),
             recommendation_payload=_recommendation_payload(),
             review_payload=_review_payload(),
+            event_risk_payload=_event_risk_payload(),
             freshness_snapshot=_freshness_snapshot(policy="market_hours_strict", short_ready=False, medium_ready=True),
             portfolio_snapshot=_portfolio_snapshot(),
             universe_registry=_universe_registry(),
@@ -339,6 +359,7 @@ class PortfolioPolicyTests(unittest.TestCase):
             market_regime_payload=_market_payload(macro_state="risk_on_confirmed", signal_direction="bullish", confidence=82),
             recommendation_payload=recommendations,
             review_payload=reviews,
+            event_risk_payload=_event_risk_payload(),
             freshness_snapshot=_freshness_snapshot(policy="market_hours_strict", short_ready=True, medium_ready=True),
             portfolio_snapshot={
                 "as_of_utc": "2026-03-16T20:55:00+00:00",
@@ -385,6 +406,7 @@ class PortfolioPolicyTests(unittest.TestCase):
                     }
                 ]
             },
+            event_risk_payload=_event_risk_payload(),
             freshness_snapshot=_freshness_snapshot(),
             portfolio_snapshot={
                 "as_of_utc": "2026-03-16T20:55:00+00:00",
@@ -438,6 +460,7 @@ class PortfolioPolicyTests(unittest.TestCase):
                     }
                 ]
             },
+            event_risk_payload=_event_risk_payload(),
             freshness_snapshot=_freshness_snapshot(),
             portfolio_snapshot=_portfolio_snapshot(
                 open_orders=[
@@ -457,6 +480,66 @@ class PortfolioPolicyTests(unittest.TestCase):
         self.assertEqual(row["action_recommendation"], "do_not_trade")
         self.assertIn("active_buy_order_exists", row["policy_blockers"])
         self.assertEqual(payload["available_cash"], 49000.0)
+
+    def test_event_risk_blocks_new_buy_and_adds_reason_codes(self) -> None:
+        payload = build_portfolio_policy(
+            market_regime_payload=_market_payload(signal_direction="bullish", confidence=78),
+            recommendation_payload={
+                "rows": [
+                    {
+                        "scope_id": "CVX",
+                        "symbol": "CVX",
+                        "recommended_action": "Buy",
+                        "recommended_horizon": "1to3d",
+                        "recommendation_class": "aligned_long",
+                        "confidence_score": 81,
+                        "score_normalized": 81.0,
+                        "execution_ready": True,
+                        "source_state": "actionable",
+                        "primary_reason_code": "market_context_supportive",
+                        "why_code": ["market_context_supportive"],
+                    }
+                ]
+            },
+            review_payload={
+                "rows": [
+                    {
+                        "scope_id": "CVX",
+                        "review_disposition": "promote",
+                        "review_bucket": "top_longs",
+                        "review_reason_code": "event_buy_capped_to_watch",
+                    }
+                ]
+            },
+            event_risk_payload={
+                "rows": [
+                    {
+                        "scope_id": "CVX",
+                        "event_active": True,
+                        "reaction_state": "beat_but_rejected",
+                        "reaction_severity": "high",
+                        "action_bias": "downgrade",
+                        "hard_cap_buy_to_watch": True,
+                    }
+                ]
+            },
+            freshness_snapshot=_freshness_snapshot(),
+            portfolio_snapshot={
+                "as_of_utc": "2026-03-16T20:55:00+00:00",
+                "base_currency": "USD",
+                "cash_available": 100000.0,
+                "net_liquidation_value": 100000.0,
+                "positions": [],
+                "open_orders": [],
+            },
+            universe_registry=_universe_registry(),
+            now_utc=datetime(2026, 3, 16, 21, 0, tzinfo=timezone.utc),
+        )
+        row = next(row for row in payload["rows"] if row["symbol"] == "CVX")
+        self.assertEqual(row["idea_tier"], "tier_blocked")
+        self.assertEqual(row["action_recommendation"], "do_not_trade")
+        self.assertIn("event_reaction_damage", row["policy_blockers"])
+        self.assertIn("beat_but_rejected", row["policy_reason_codes"])
 
 
 if __name__ == "__main__":

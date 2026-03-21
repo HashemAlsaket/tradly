@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from tradly.pipeline.interpret_news_llm import _normalize_record, _validate_record
+from tradly.pipeline.interpret_news_llm import _normalize_record, _sanitize_relevance_symbols, _validate_record
+from tradly.pipeline.news_prompt_modules import build_news_interpreter_user_prompt
 
 
 class InterpretNewsContractTests(unittest.TestCase):
@@ -156,6 +157,84 @@ class InterpretNewsContractTests(unittest.TestCase):
         ok, reason = _validate_record(row)
         self.assertFalse(ok)
         self.assertEqual(reason, "impact_scope_invalid")
+
+    def test_prompt_builder_includes_only_relevant_sector_guidance(self) -> None:
+        prompt = build_news_interpreter_user_prompt(
+            [
+                {
+                    "provider": "marketaux",
+                    "provider_news_id": "g1",
+                    "headline": "GE contract update",
+                    "summary": "Aerospace contract news.",
+                    "symbols": ["GE"],
+                    "symbol_sector_hints": ["industrials"],
+                }
+            ]
+        )
+
+        self.assertIn("industrials-aware thesis tags", prompt)
+        self.assertNotIn("healthcare-aware thesis tags", prompt)
+
+    def test_prompt_builder_includes_consumer_defensive_guidance_when_relevant(self) -> None:
+        prompt = build_news_interpreter_user_prompt(
+            [
+                {
+                    "provider": "marketaux",
+                    "provider_news_id": "c1",
+                    "headline": "Walmart traffic trend",
+                    "summary": "Discount retail traffic remains resilient.",
+                    "symbols": ["WMT"],
+                    "symbol_sector_hints": ["consumer_defensive"],
+                }
+            ]
+        )
+
+        self.assertIn("consumer-defensive-aware thesis tags", prompt)
+        self.assertNotIn("healthcare-aware thesis tags", prompt)
+
+    def test_sanitize_relevance_symbols_filters_symbols_not_in_article(self) -> None:
+        row, reason = _sanitize_relevance_symbols(
+            {
+                "provider": "marketaux",
+                "provider_news_id": "rel1",
+                "bucket": "symbol",
+                "impact_scope": "symbol_specific",
+                "impact_direction": "bullish",
+                "impact_horizon": "1to2w",
+                "relevance_symbols": ["GOOGL", "MU"],
+                "thesis_tags": ["ads"],
+                "market_impact_note": "Alphabet-specific note.",
+                "confidence_label": "medium",
+                "based_on_provided_evidence": True,
+                "calculation_performed": False,
+            },
+            allowed_symbols=["GOOGL"],
+        )
+
+        self.assertIsNone(reason)
+        self.assertEqual(row["relevance_symbols"], ["GOOGL"])
+
+    def test_sanitize_relevance_symbols_rejects_symbol_specific_row_when_no_allowed_symbol_remains(self) -> None:
+        row, reason = _sanitize_relevance_symbols(
+            {
+                "provider": "marketaux",
+                "provider_news_id": "rel2",
+                "bucket": "symbol",
+                "impact_scope": "symbol_specific",
+                "impact_direction": "bullish",
+                "impact_horizon": "1to2w",
+                "relevance_symbols": ["MU"],
+                "thesis_tags": ["ads"],
+                "market_impact_note": "Alphabet-specific note.",
+                "confidence_label": "medium",
+                "based_on_provided_evidence": True,
+                "calculation_performed": False,
+            },
+            allowed_symbols=["GOOGL"],
+        )
+
+        self.assertEqual(reason, "relevance_symbols_mismatch")
+        self.assertEqual(row["relevance_symbols"], [])
 
 
 if __name__ == "__main__":

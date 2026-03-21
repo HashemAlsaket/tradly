@@ -1,11 +1,12 @@
 {
   "version": 1,
   "summary": {
-    "all_symbols": 116,
-    "active_symbols": 44,
-    "market_data_symbols": 70,
-    "model_symbols": 44,
-    "direct_news_symbols": 43
+    "all_symbols": 118,
+    "active_symbols": 57,
+    "market_data_symbols": 88,
+    "model_symbols": 57,
+    "direct_news_symbols": 54,
+    "portfolio_eligible_symbols": 20
   },
   "scopes": {
     "all_symbols": [
@@ -32,6 +33,7 @@
       "COST",
       "CRM",
       "CSCO",
+      "CVS",
       "CVX",
       "DE",
       "DHR",
@@ -46,6 +48,7 @@
       "FCX",
       "FXI",
       "GE",
+      "GILD",
       "GLD",
       "GOOGL",
       "GS",
@@ -134,23 +137,33 @@
       "AVGO",
       "BAC",
       "BLK",
+      "CAT",
       "COIN",
       "COST",
       "CRM",
       "CSCO",
       "CVX",
+      "DE",
+      "DHR",
       "DIA",
       "DIS",
+      "EOG",
+      "GE",
       "GOOGL",
       "GS",
+      "HON",
       "INTC",
+      "ISRG",
       "IWM",
+      "JNJ",
       "JPM",
       "KO",
       "LLY",
+      "LMT",
       "MA",
       "MCD",
       "META",
+      "MRK",
       "MS",
       "MSFT",
       "MU",
@@ -161,10 +174,13 @@
       "ORCL",
       "PEP",
       "PFE",
+      "PG",
       "PLTR",
       "QQQ",
+      "SLB",
       "SNDK",
       "SPY",
+      "TMO",
       "TSLA",
       "UNH",
       "V",
@@ -191,24 +207,36 @@
       "BLK",
       "CAT",
       "CHTR",
+      "CL",
       "COIN",
       "COST",
       "CRM",
       "CSCO",
+      "CVS",
       "CVX",
+      "DE",
+      "DHR",
       "DIA",
       "DIS",
+      "EOG",
+      "GE",
+      "GILD",
       "GOOGL",
       "GS",
+      "HON",
       "IEF",
       "INTC",
+      "ISRG",
       "IWM",
+      "JNJ",
       "JPM",
       "KO",
       "LLY",
+      "LMT",
       "MA",
       "MCD",
       "META",
+      "MRK",
       "MS",
       "MSFT",
       "MU",
@@ -217,16 +245,22 @@
       "NVDA",
       "NVTS",
       "ORCL",
+      "OXY",
       "PEP",
       "PFE",
+      "PG",
       "PLTR",
       "QQQ",
       "SHY",
+      "SLB",
       "SNDK",
       "SPY",
       "TLT",
+      "TMO",
       "TSLA",
       "UNH",
+      "UNP",
+      "UPS",
       "V",
       "VIXY",
       "VTI",
@@ -252,23 +286,33 @@
       "AVGO",
       "BAC",
       "BLK",
+      "CAT",
       "COIN",
       "COST",
       "CRM",
       "CSCO",
       "CVX",
+      "DE",
+      "DHR",
       "DIA",
       "DIS",
+      "EOG",
+      "GE",
       "GOOGL",
       "GS",
+      "HON",
       "INTC",
+      "ISRG",
       "IWM",
+      "JNJ",
       "JPM",
       "KO",
       "LLY",
+      "LMT",
       "MA",
       "MCD",
       "META",
+      "MRK",
       "MS",
       "MSFT",
       "MU",
@@ -279,10 +323,13 @@
       "ORCL",
       "PEP",
       "PFE",
+      "PG",
       "PLTR",
       "QQQ",
+      "SLB",
       "SNDK",
       "SPY",
+      "TMO",
       "TSLA",
       "UNH",
       "V",
@@ -298,16 +345,25 @@
       "ARM",
       "ASML",
       "AVGO",
+      "CAT",
+      "CVX",
       "EWJ",
       "EWT",
       "FXI",
       "GLD",
+      "GOOGL",
+      "HON",
       "IEF",
       "INTC",
+      "JNJ",
       "KLAC",
       "KRE",
       "KWEB",
+      "LLY",
+      "LMT",
       "LRCX",
+      "MRK",
+      "MSFT",
       "MU",
       "NVDA",
       "NVTS",
@@ -319,9 +375,11 @@
       "SPY",
       "TLT",
       "TSM",
+      "UNH",
       "USO",
       "UUP",
       "VIXY",
+      "WMT",
       "XLB",
       "XLC",
       "XLE",
@@ -331,9 +389,31 @@
       "XLP",
       "XLRE",
       "XLU",
-      "XLV",
       "XLY",
+      "XOM",
       "XSD"
+    ],
+    "portfolio_eligible_symbols": [
+      "CAT",
+      "COST",
+      "CRM",
+      "CVX",
+      "DHR",
+      "GE",
+      "GOOGL",
+      "HON",
+      "ISRG",
+      "JNJ",
+      "LLY",
+      "META",
+      "MRK",
+      "MSFT",
+      "ORCL",
+      "PG",
+      "TMO",
+      "UNH",
+      "WMT",
+      "XOM"
     ]
   },
   "groupings": {
@@ -416,7 +496,9 @@
       ],
       "Healthcare": [
         "ABBV",
+        "CVS",
         "DHR",
+        "GILD",
         "ISRG",
         "JNJ",
         "LLY",
@@ -482,6 +564,13 @@
       ]
     },
     "by_role": {
+      "aerospace_defense": [
+        "GE",
+        "LMT"
+      ],
+      "ai_application_software": [
+        "PLTR"
+      ],
       "asia_context": [
         "EWJ",
         "EWT",
@@ -496,17 +585,66 @@
         "SPY",
         "VTI"
       ],
+      "cable_broadband": [
+        "CHTR"
+      ],
+      "cloud_platforms": [
+        "MSFT",
+        "ORCL"
+      ],
+      "consumer_hardware": [
+        "AAPL"
+      ],
       "core": [
         "MU",
         "NVDA",
         "NVTS",
         "SNDK"
       ],
+      "core_leader": [
+        "CAT",
+        "COST",
+        "GE",
+        "HON",
+        "JNJ",
+        "LLY",
+        "PG",
+        "UNH",
+        "WMT"
+      ],
+      "creative_application_software": [
+        "ADBE"
+      ],
+      "diversified_industrials": [
+        "HON"
+      ],
       "earnings_focus": [
         "MU",
         "NVDA",
         "NVTS",
         "SNDK"
+      ],
+      "energy_services": [
+        "SLB"
+      ],
+      "enterprise_software": [
+        "CRM"
+      ],
+      "heavy_equipment_capex": [
+        "CAT",
+        "DE"
+      ],
+      "household_personal_care": [
+        "CL",
+        "PG"
+      ],
+      "integrated_majors": [
+        "CVX",
+        "XOM"
+      ],
+      "internet_platforms": [
+        "GOOGL",
+        "META"
       ],
       "macro_context": [
         "ARKK",
@@ -523,6 +661,44 @@
         "UUP",
         "VIXY",
         "VTI"
+      ],
+      "managed_care_retail_health": [
+        "CVS",
+        "UNH"
+      ],
+      "media_entertainment": [
+        "DIS"
+      ],
+      "membership_retail": [
+        "COST",
+        "WMT"
+      ],
+      "networking_infrastructure": [
+        "CSCO"
+      ],
+      "pharma_defensive": [
+        "GILD",
+        "JNJ",
+        "LLY",
+        "MRK"
+      ],
+      "probationary_market_data_only": [
+        "CHTR",
+        "CL",
+        "CVS",
+        "GILD",
+        "OXY",
+        "UNP",
+        "UPS"
+      ],
+      "quality_tools_devices": [
+        "DHR",
+        "ISRG",
+        "TMO"
+      ],
+      "rails_logistics": [
+        "UNP",
+        "UPS"
       ],
       "sector_context": [
         "KRE",
@@ -560,6 +736,7 @@
         "COST",
         "CRM",
         "CSCO",
+        "CVS",
         "CVX",
         "DE",
         "DHR",
@@ -570,6 +747,7 @@
         "EXC",
         "FCX",
         "GE",
+        "GILD",
         "GOOGL",
         "GS",
         "HON",
@@ -619,6 +797,14 @@
         "WMT",
         "XOM"
       ],
+      "sector_proxy": [
+        "XLC",
+        "XLE",
+        "XLI",
+        "XLK",
+        "XLP",
+        "XLV"
+      ],
       "semis": [
         "ADI",
         "AMAT",
@@ -634,6 +820,63 @@
         "NVTS",
         "SNDK",
         "TSM"
+      ],
+      "staples_beverages": [
+        "PEP"
+      ],
+      "streaming_media": [
+        "NFLX"
+      ],
+      "upstream_ep": [
+        "EOG",
+        "OXY"
+      ]
+    },
+    "by_onboarding_stage": {
+      "market_data_only": [
+        "CHTR",
+        "CL",
+        "CVS",
+        "GILD",
+        "OXY",
+        "UNP",
+        "UPS",
+        "XLV"
+      ],
+      "modeled": [
+        "AAPL",
+        "ADBE",
+        "COST",
+        "CRM",
+        "CSCO",
+        "DE",
+        "DHR",
+        "DIS",
+        "EOG",
+        "GE",
+        "ISRG",
+        "META",
+        "NFLX",
+        "ORCL",
+        "PEP",
+        "PG",
+        "PLTR",
+        "SLB",
+        "TMO"
+      ],
+      "modeled_with_direct_news": [
+        "CAT",
+        "CVX",
+        "GOOGL",
+        "HON",
+        "JNJ",
+        "LLY",
+        "LMT",
+        "MRK",
+        "MSFT",
+        "UNH",
+        "WMT",
+        "XOM"
       ]
     },
     "news_buckets": {
@@ -650,6 +893,30 @@
         "NVTS",
         "SNDK",
         "TSM"
+      ],
+      "technology_core": [
+        "MSFT"
+      ],
+      "healthcare_core": [
+        "JNJ",
+        "LLY",
+        "MRK",
+        "UNH"
+      ],
+      "industrials_core": [
+        "CAT",
+        "HON",
+        "LMT"
+      ],
+      "consumer_defensive_core": [
+        "WMT"
+      ],
+      "communication_services_core": [
+        "GOOGL"
+      ],
+      "energy_core": [
+        "CVX",
+        "XOM"
       ],
       "us_macro": [
         "ARKK",
@@ -692,7 +959,6 @@
         "XLP",
         "XLRE",
         "XLU",
-        "XLV",
         "XLY",
         "XSD"
       ],

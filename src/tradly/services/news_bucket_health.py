@@ -11,6 +11,12 @@ REQUIRED_NEWS_BUCKETS = (
     "event_reserve",
 )
 OPTIONAL_NEWS_BUCKETS = (
+    "technology_core",
+    "healthcare_core",
+    "industrials_core",
+    "consumer_defensive_core",
+    "communication_services_core",
+    "energy_core",
     "asia_semis",
     "asia_macro",
 )

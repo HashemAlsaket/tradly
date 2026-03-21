@@ -9,6 +9,7 @@ from tradly.models.portfolio_policy import build_portfolio_policy
 from tradly.paths import get_repo_root
 from tradly.services.artifact_alignment import assess_artifact_alignment
 from tradly.services.time_context import get_time_context
+from tradly.services.universe_registry import load_normalized_registry
 
 
 MAX_UPSTREAM_AGE = timedelta(hours=6)
@@ -40,9 +41,13 @@ def main() -> int:
     market_payload = _load_latest_json(runs_dir, "*/market_regime_v1.json")
     recommendation_payload = _load_latest_json(runs_dir, "*/recommendation_v1.json")
     review_payload = _load_latest_json(runs_dir, "*/recommendation_review_v1.json")
+    event_risk_payload = _load_latest_json(runs_dir, "*/event_risk_v1.json")
     freshness_snapshot = _load_json_file(repo_root / "data" / "journal" / "freshness_snapshot.json")
     portfolio_snapshot = _load_json_file(manual_dir / "portfolio_snapshot_v1.json")
-    universe_registry = _load_json_file(manual_dir / "universe_registry.json")
+    try:
+        universe_registry = load_normalized_registry(manual_dir / "universe_registry.json")
+    except Exception:
+        universe_registry = {}
 
     if not market_payload:
         print("portfolio_policy_v1_failed:market_regime_missing")
@@ -53,15 +58,18 @@ def main() -> int:
     if not review_payload:
         print("portfolio_policy_v1_failed:recommendation_review_missing")
         return 3
+    if not event_risk_payload:
+        print("portfolio_policy_v1_failed:event_risk_missing")
+        return 4
     if not freshness_snapshot:
         print("portfolio_policy_v1_failed:freshness_snapshot_missing")
-        return 4
+        return 5
     if not portfolio_snapshot:
         print("portfolio_policy_v1_failed:portfolio_snapshot_missing")
-        return 5
+        return 6
     if not universe_registry:
         print("portfolio_policy_v1_failed:universe_registry_missing")
-        return 6
+        return 7
 
     alignments = {
         "market_regime_v1": assess_artifact_alignment(
@@ -82,16 +90,23 @@ def main() -> int:
             now_utc=time_ctx.now_utc,
             max_age=MAX_UPSTREAM_AGE,
         ),
+        "event_risk_v1": assess_artifact_alignment(
+            artifact_name="event_risk_v1",
+            payload=event_risk_payload,
+            now_utc=time_ctx.now_utc,
+            max_age=MAX_UPSTREAM_AGE,
+        ),
     }
     stale = [name for name, alignment in alignments.items() if not alignment.valid]
     if stale:
         print(f"portfolio_policy_v1_failed:stale_upstream:{','.join(sorted(stale))}")
-        return 7
+        return 8
 
     model_payload = build_portfolio_policy(
         market_regime_payload=market_payload,
         recommendation_payload=recommendation_payload,
         review_payload=review_payload,
+        event_risk_payload=event_risk_payload,
         freshness_snapshot=freshness_snapshot,
         portfolio_snapshot=portfolio_snapshot,
         universe_registry=universe_registry,
@@ -103,7 +118,7 @@ def main() -> int:
         print("portfolio_policy_v1_failed:invalid_portfolio_snapshot")
         for reason in input_audit.get("failure_reasons", []):
             print(f"error={reason}")
-        return 8
+        return 9
 
     registry_entry = get_model_registry_entry("portfolio_policy_v1")
     run_date = time_ctx.now_utc.strftime("%Y-%m-%d")
@@ -120,7 +135,7 @@ def main() -> int:
         "registry": registry_entry.to_dict(),
         "input_summary": {
             **(model_payload.get("input_summary", {}) if isinstance(model_payload, dict) else {}),
-            "upstream_models": ["market_regime_v1", "recommendation_v1", "recommendation_review_v1"],
+            "upstream_models": ["market_regime_v1", "recommendation_v1", "recommendation_review_v1", "event_risk_v1"],
         },
         "input_audit": {
             **(input_audit if isinstance(input_audit, dict) else {}),

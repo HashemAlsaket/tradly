@@ -3,9 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from tradly.services.market_calendar import market_session_state
+
 
 HORIZON_ORDER = ("1to3d", "1to2w", "2to6w")
 SHORTER_HORIZON_PRIORITY = {"1to3d": 2, "1to2w": 1, "2to6w": 0}
+CONFLICT_PENALTIES = {
+    "component_conflict_high": 3,
+    "range_expanding_conviction_reduced": 2,
+    "upstream_lane_thin": 2,
+}
 
 
 def action_for_horizon(horizon_row: dict[str, Any]) -> str:
@@ -171,6 +178,88 @@ def _best_horizon(summary: dict[str, Any]) -> tuple[str, dict[str, Any], str]:
     return horizon, horizon_row, action
 
 
+def _actionability_class(*, action: str, recommended_horizon: str, now_utc: datetime) -> str:
+    if action == "Blocked":
+        return "blocked"
+    if action in {"Defer Buy", "Defer Trim", "Defer"}:
+        return "deferred"
+    if action in {"Watch Buy", "Watch Trim", "Hold", "Hold/Watch"}:
+        return "watch_research"
+    if action in {"Buy", "Sell/Trim"} and recommended_horizon == "1to3d":
+        return "tactical_intraday" if market_session_state(now_utc) == "market_hours" else "tactical_offhours_fragile"
+    return "actionable_swing_position"
+
+
+def _same_direction_alt_scores(summary: dict[str, Any], *, chosen_horizon: str, direction: str) -> list[float]:
+    scores: list[float] = []
+    for horizon in HORIZON_ORDER:
+        if horizon == chosen_horizon:
+            continue
+        row = summary.get(horizon, {}) if isinstance(summary, dict) else {}
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("signal_direction", "")).strip().lower() != direction:
+            continue
+        if str(row.get("state", "")).strip().lower() not in {"actionable", "research_only"}:
+            continue
+        scores.append(abs(float(row.get("score_normalized", 0.0) or 0.0)))
+    return scores
+
+
+def _calibrate_confidence(
+    *,
+    base_confidence: int,
+    score_normalized: float,
+    why_codes: list[str],
+    action: str,
+    recommended_horizon: str,
+    evidence_balance_class: str,
+    regime_alignment: str,
+    direction: str,
+    summary: dict[str, Any],
+    now_utc: datetime,
+) -> tuple[int, str, int]:
+    base_confidence = int(base_confidence or 0)
+    abs_score = abs(float(score_normalized or 0.0))
+    codes = {str(code).strip() for code in why_codes if str(code).strip()}
+    actionability_class = _actionability_class(
+        action=action,
+        recommended_horizon=recommended_horizon,
+        now_utc=now_utc,
+    )
+
+    confidence = base_confidence
+
+    if action == "Sell/Trim":
+        strongest_alt = max(_same_direction_alt_scores(summary, chosen_horizon=recommended_horizon, direction=direction), default=0.0)
+        reinforcement = 0
+        if strongest_alt >= 45:
+            reinforcement += min(6, max(0, round((strongest_alt - 45.0) / 8.0)))
+        if evidence_balance_class == "aligned_strong":
+            reinforcement += 2
+        elif evidence_balance_class == "aligned_lean":
+            reinforcement += 1
+        conflict_penalty = sum(CONFLICT_PENALTIES.get(code, 0) for code in codes)
+        confidence += reinforcement - conflict_penalty
+
+    if actionability_class == "tactical_offhours_fragile":
+        cap = 60 + min(8, round(abs_score / 12.5))
+        if regime_alignment == "aligned":
+            cap += 2
+        if evidence_balance_class == "aligned_strong":
+            cap += 2
+        confidence = min(confidence, cap)
+    elif actionability_class == "watch_research":
+        confidence = min(confidence, 68 if action in {"Watch Buy", "Watch Trim"} else 55)
+    elif actionability_class == "deferred":
+        confidence = min(confidence, 60)
+    elif actionability_class == "blocked":
+        confidence = min(confidence, 25)
+
+    confidence = max(0, min(int(round(confidence)), 100))
+    return confidence, actionability_class, confidence - base_confidence
+
+
 def build_recommendation_rows(*, ensemble_rows: list[dict], now_utc: datetime) -> list[dict]:
     recommendations: list[dict] = []
     for row in ensemble_rows:
@@ -185,6 +274,20 @@ def build_recommendation_rows(*, ensemble_rows: list[dict], now_utc: datetime) -
         direction = str(horizon_row.get("signal_direction", "neutral")).strip().lower()
         evidence_balance_class = _evidence_balance_class(direction, why_codes)
         regime_alignment = _regime_alignment(evidence_balance_class)
+        base_confidence = int(horizon_row.get("confidence_score", row.get("confidence_score", 0)) or 0)
+        score_normalized = float(horizon_row.get("score_normalized", row.get("score_normalized", 0.0)) or 0.0)
+        calibrated_confidence, actionability_class, confidence_adjustment = _calibrate_confidence(
+            base_confidence=base_confidence,
+            score_normalized=score_normalized,
+            why_codes=why_codes,
+            action=action,
+            recommended_horizon=recommended_horizon,
+            evidence_balance_class=evidence_balance_class,
+            regime_alignment=regime_alignment,
+            direction=direction,
+            summary=summary,
+            now_utc=now_utc,
+        )
         recommendations.append(
             {
                 "model_id": "recommendation_v1",
@@ -200,14 +303,17 @@ def build_recommendation_rows(*, ensemble_rows: list[dict], now_utc: datetime) -
                 ),
                 "evidence_balance_class": evidence_balance_class,
                 "regime_alignment": regime_alignment,
+                "actionability_class": actionability_class,
                 "signal_direction": direction,
-                "confidence_score": int(horizon_row.get("confidence_score", row.get("confidence_score", 0)) or 0),
+                "confidence_score": calibrated_confidence,
+                "base_confidence_score": base_confidence,
+                "confidence_adjustment": confidence_adjustment,
                 "confidence_label": str(horizon_row.get("confidence_label", row.get("confidence_label", "low"))),
                 "coverage_state": str(horizon_row.get("coverage_state", row.get("coverage_state", "insufficient_evidence"))),
                 "primary_reason_code": why_codes[0] if why_codes else "recommendation_signal_unclear",
                 "why_code": why_codes,
                 "execution_ready": bool(horizon_row.get("execution_ready", row.get("execution_ready", True))),
-                "score_normalized": float(horizon_row.get("score_normalized", row.get("score_normalized", 0.0)) or 0.0),
+                "score_normalized": score_normalized,
                 "source_state": str(horizon_row.get("state", "unknown")),
                 "as_of_utc": now_utc.isoformat(),
             }

@@ -8,11 +8,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Technology",
       "industry": "Consumer Electronics",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "consumer_hardware"
       ],
       "news_buckets": []
     },
@@ -38,11 +41,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Technology",
       "industry": "Software - Application",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "creative_application_software"
       ],
       "news_buckets": []
     },
@@ -263,17 +269,23 @@
     {
       "symbol": "CAT",
       "asset_type": "stock",
-      "active": false,
+      "active": true,
       "market_data": true,
-      "model": false,
-      "direct_news": false,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Industrials",
       "industry": "Farm & Heavy Construction Machinery",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "heavy_equipment_capex"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "industrials_core"
+      ]
     },
     {
       "symbol": "CHTR",
@@ -282,11 +294,15 @@
       "market_data": true,
       "model": false,
       "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "Communication Services",
       "industry": "Telecom Services",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "cable_broadband",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
@@ -294,14 +310,18 @@
       "symbol": "CL",
       "asset_type": "stock",
       "active": false,
-      "market_data": false,
+      "market_data": true,
       "model": false,
       "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "Consumer Defensive",
       "industry": "Household & Personal Products",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "household_personal_care",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
@@ -327,11 +347,15 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "sector": "Consumer Defensive",
       "industry": "Discount Stores",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "membership_retail"
       ],
       "news_buckets": []
     },
@@ -342,11 +366,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "sector": "Technology",
       "industry": "Software - Application",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "enterprise_software"
       ],
       "news_buckets": []
     },
@@ -357,11 +384,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Technology",
       "industry": "Communication Equipment",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "networking_infrastructure"
       ],
       "news_buckets": []
     },
@@ -371,42 +401,72 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Energy",
       "industry": "Oil & Gas Integrated",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "integrated_majors"
+      ],
+      "news_buckets": [
+        "energy_core"
+      ]
+    },
+    {
+      "symbol": "CVS",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
+      "sector": "Healthcare",
+      "industry": "Pharmacy & Drug Stores",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader",
+        "managed_care_retail_health",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
     {
       "symbol": "DE",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Industrials",
       "industry": "Farm & Heavy Construction Machinery",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "heavy_equipment_capex"
       ],
       "news_buckets": []
     },
     {
       "symbol": "DHR",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "direct_news": false,
       "sector": "Healthcare",
       "industry": "Diagnostics & Research",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "quality_tools_devices"
       ],
       "news_buckets": []
     },
@@ -433,11 +493,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Communication Services",
       "industry": "Entertainment",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "media_entertainment"
       ],
       "news_buckets": []
     },
@@ -459,15 +522,18 @@
     {
       "symbol": "EOG",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Energy",
       "industry": "Oil & Gas E&P",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "upstream_ep"
       ],
       "news_buckets": []
     },
@@ -570,15 +636,38 @@
     {
       "symbol": "GE",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "sector": "Industrials",
       "industry": "Aerospace & Defense",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "aerospace_defense"
+      ],
+      "news_buckets": []
+    },
+    {
+      "symbol": "GILD",
+      "asset_type": "stock",
+      "active": false,
+      "market_data": true,
+      "model": false,
+      "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
+      "sector": "Healthcare",
+      "industry": "Drug Manufacturers - General",
+      "halal_flag": "investable",
+      "roles": [
+        "sector_leader",
+        "pharma_defensive",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
@@ -605,14 +694,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Communication Services",
       "industry": "Internet Content & Information",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "internet_platforms"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "communication_services_core"
+      ]
     },
     {
       "symbol": "GS",
@@ -632,17 +726,23 @@
     {
       "symbol": "HON",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
-      "direct_news": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Industrials",
       "industry": "Specialty Industrial Machinery",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "diversified_industrials"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "industrials_core"
+      ]
     },
     {
       "symbol": "I:VIX",
@@ -697,15 +797,18 @@
     {
       "symbol": "ISRG",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "direct_news": false,
       "sector": "Healthcare",
       "industry": "Medical Instruments & Supplies",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "quality_tools_devices"
       ],
       "news_buckets": []
     },
@@ -728,17 +831,23 @@
     {
       "symbol": "JNJ",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
-      "direct_news": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Healthcare",
       "industry": "Drug Manufacturers - General",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "pharma_defensive"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "healthcare_core"
+      ]
     },
     {
       "symbol": "JPM",
@@ -843,29 +952,40 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Healthcare",
       "industry": "Drug Manufacturers - General",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "pharma_defensive"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "healthcare_core"
+      ]
     },
     {
       "symbol": "LMT",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
-      "direct_news": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": false,
       "sector": "Industrials",
       "industry": "Aerospace & Defense",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "aerospace_defense"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "industrials_core"
+      ]
     },
     {
       "symbol": "LRCX",
@@ -937,28 +1057,36 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "sector": "Communication Services",
       "industry": "Internet Content & Information",
       "halal_flag": "review_required",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "internet_platforms"
       ],
       "news_buckets": []
     },
     {
       "symbol": "MRK",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
-      "direct_news": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Healthcare",
       "industry": "Drug Manufacturers - General",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "pharma_defensive"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "healthcare_core"
+      ]
     },
     {
       "symbol": "MS",
@@ -981,14 +1109,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Technology",
       "industry": "Software - Infrastructure",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "cloud_platforms"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "technology_core"
+      ]
     },
     {
       "symbol": "MU",
@@ -1048,11 +1181,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Communication Services",
       "industry": "Entertainment",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "streaming_media"
       ],
       "news_buckets": []
     },
@@ -1134,11 +1270,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "sector": "Technology",
       "industry": "Software - Infrastructure",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "cloud_platforms"
       ],
       "news_buckets": []
     },
@@ -1146,14 +1285,18 @@
       "symbol": "OXY",
       "asset_type": "stock",
       "active": false,
-      "market_data": false,
+      "market_data": true,
       "model": false,
       "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "Energy",
       "industry": "Oil & Gas E&P",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "upstream_ep",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
@@ -1164,11 +1307,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Consumer Defensive",
       "industry": "Beverages - Non-Alcoholic",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "staples_beverages"
       ],
       "news_buckets": []
     },
@@ -1190,15 +1336,19 @@
     {
       "symbol": "PG",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "sector": "Consumer Defensive",
       "industry": "Household & Personal Products",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "household_personal_care"
       ],
       "news_buckets": []
     },
@@ -1224,11 +1374,14 @@
       "market_data": true,
       "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Technology",
       "industry": "Software - Infrastructure",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "ai_application_software"
       ],
       "news_buckets": []
     },
@@ -1270,15 +1423,18 @@
     {
       "symbol": "SLB",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
       "direct_news": false,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": false,
       "sector": "Energy",
       "industry": "Oil & Gas Equipment & Services",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "energy_services"
       ],
       "news_buckets": []
     },
@@ -1434,15 +1590,18 @@
     {
       "symbol": "TMO",
       "asset_type": "stock",
-      "active": false,
-      "market_data": false,
-      "model": false,
+      "active": true,
+      "market_data": true,
+      "model": true,
+      "onboarding_stage": "modeled",
+      "portfolio_eligible": true,
       "direct_news": false,
       "sector": "Healthcare",
       "industry": "Diagnostics & Research",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "quality_tools_devices"
       ],
       "news_buckets": []
     },
@@ -1501,27 +1660,37 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Healthcare",
       "industry": "Healthcare Plans",
       "halal_flag": "review_required",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "managed_care_retail_health"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "healthcare_core"
+      ]
     },
     {
       "symbol": "UNP",
       "asset_type": "stock",
       "active": false,
-      "market_data": false,
+      "market_data": true,
       "model": false,
       "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "Industrials",
       "industry": "Railroads",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "rails_logistics",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
@@ -1529,14 +1698,18 @@
       "symbol": "UPS",
       "asset_type": "stock",
       "active": false,
-      "market_data": false,
+      "market_data": true,
       "model": false,
       "direct_news": false,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "Industrials",
       "industry": "Integrated Freight & Logistics",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "rails_logistics",
+        "probationary_market_data_only"
       ],
       "news_buckets": []
     },
@@ -1630,14 +1803,20 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Consumer Defensive",
       "industry": "Discount Stores",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "core_leader",
+        "membership_retail"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "consumer_defensive_core"
+      ]
     },
     {
       "symbol": "XLB",
@@ -1663,11 +1842,13 @@
       "market_data": true,
       "model": false,
       "direct_news": true,
+      "portfolio_eligible": false,
       "sector": "ETF",
       "industry": "Communication Services ETF",
       "halal_flag": "investable",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"
@@ -1684,7 +1865,8 @@
       "industry": "Energy ETF",
       "halal_flag": "investable",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"
@@ -1714,11 +1896,13 @@
       "market_data": true,
       "model": false,
       "direct_news": true,
+      "portfolio_eligible": false,
       "sector": "ETF",
       "industry": "Industrials ETF",
       "halal_flag": "investable",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"
@@ -1731,11 +1915,13 @@
       "market_data": true,
       "model": false,
       "direct_news": true,
+      "portfolio_eligible": false,
       "sector": "ETF",
       "industry": "Context Symbol",
       "halal_flag": "review_required",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"
@@ -1752,7 +1938,8 @@
       "industry": "Consumer Staples ETF",
       "halal_flag": "investable",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"
@@ -1799,11 +1986,14 @@
       "market_data": true,
       "model": false,
       "direct_news": true,
+      "onboarding_stage": "market_data_only",
+      "portfolio_eligible": false,
       "sector": "ETF",
       "industry": "Healthcare ETF",
       "halal_flag": "investable",
       "roles": [
-        "sector_context"
+        "sector_context",
+        "sector_proxy"
       ],
       "news_buckets": [
         "sector_context"
@@ -1832,14 +2022,19 @@
       "active": true,
       "market_data": true,
       "model": true,
-      "direct_news": false,
+      "direct_news": true,
+      "onboarding_stage": "modeled_with_direct_news",
+      "portfolio_eligible": true,
       "sector": "Energy",
       "industry": "Oil & Gas Integrated",
       "halal_flag": "investable",
       "roles": [
-        "sector_leader"
+        "sector_leader",
+        "integrated_majors"
       ],
-      "news_buckets": []
+      "news_buckets": [
+        "energy_core"
+      ]
     },
     {
       "symbol": "XSD",

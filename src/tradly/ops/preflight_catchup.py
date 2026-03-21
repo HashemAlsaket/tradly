@@ -133,6 +133,40 @@ def _load_1m_watermark_coverage(conn, scoped_symbols: list[str]) -> tuple[dateti
     return shared_load_1m_watermark_coverage(conn, scoped_symbols)
 
 
+def _load_missing_daily_symbols(conn, scoped_symbols: list[str], expected_market_date: date) -> list[str]:
+    if not scoped_symbols:
+        return []
+    placeholders = ",".join("?" for _ in scoped_symbols)
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT symbol
+        FROM market_bars
+        WHERE timeframe = '1d'
+          AND CAST(ts_utc AS DATE) = ?
+          AND symbol IN ({placeholders})
+        """,
+        [expected_market_date, *scoped_symbols],
+    ).fetchall()
+    present = {str(symbol).strip().upper() for (symbol,) in rows}
+    return sorted(symbol for symbol in scoped_symbols if symbol not in present)
+
+
+def _load_missing_snapshot_symbols(conn, scoped_symbols: list[str]) -> list[str]:
+    if not scoped_symbols:
+        return []
+    placeholders = ",".join("?" for _ in scoped_symbols)
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT symbol
+        FROM market_snapshots
+        WHERE symbol IN ({placeholders})
+        """,
+        scoped_symbols,
+    ).fetchall()
+    present = {str(symbol).strip().upper() for (symbol,) in rows}
+    return sorted(symbol for symbol in scoped_symbols if symbol not in present)
+
+
 def main() -> int:
     repo_root = get_repo_root()
     _load_dotenv(repo_root / ".env")
@@ -165,6 +199,7 @@ def main() -> int:
         latest_market_bar = conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1d'"
         ).fetchone()[0]
+        missing_daily_symbols = _load_missing_daily_symbols(conn, scoped_symbols, expected_min_market_date)
         watermark_intraday_bar, watermark_coverage_complete, watermark_coverage_count = _load_1m_watermark_coverage(conn, scoped_symbols)
         latest_intraday_bar = watermark_intraday_bar or conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1m'"
@@ -172,6 +207,7 @@ def main() -> int:
         latest_snapshot = conn.execute(
             "SELECT MAX(as_of_utc) FROM market_snapshots"
         ).fetchone()[0]
+        missing_snapshot_symbols = _load_missing_snapshot_symbols(conn, scoped_symbols)
         latest_news_pull = conn.execute(
             """
             SELECT MAX(created_at_utc)
@@ -211,16 +247,21 @@ def main() -> int:
     market_stale = True
     if latest_market_bar is not None:
         latest_market_date = _market_date_from_db_ts(latest_market_bar)
-        market_stale = latest_market_date < expected_min_market_date
+        market_stale = latest_market_date < expected_min_market_date or bool(missing_daily_symbols)
         backfill_from = (
-            (latest_market_date - timedelta(days=2)).isoformat() if market_stale else None
+            (expected_min_market_date - timedelta(days=180)).isoformat()
+            if missing_daily_symbols
+            else ((latest_market_date - timedelta(days=2)).isoformat() if market_stale else None)
         )
-        backfill_to = expected_min_market_date.isoformat() if market_stale else None
+        backfill_to = expected_min_market_date.isoformat() if (market_stale or missing_daily_symbols) else None
         lags.append(
             SourceLag(
                 source="market_bars_1d",
                 status="stale" if market_stale else "fresh",
-                detail=f"latest_market_date={latest_market_date} expected_min_market_date={expected_min_market_date}",
+                detail=(
+                    f"latest_market_date={latest_market_date} expected_min_market_date={expected_min_market_date} "
+                    f"missing_scope_symbols={len(missing_daily_symbols)}"
+                ),
                 backfill_from=backfill_from,
                 backfill_to=backfill_to,
             )
@@ -276,6 +317,9 @@ def main() -> int:
         freshness_policy=freshness_policy,
         max_age_sec=snapshot_max_age_sec,
     )
+    if missing_snapshot_symbols:
+        snapshot_status = "missing"
+        snapshot_age_sec = None
     lags.append(
         SourceLag(
             source="market_snapshots",
@@ -287,7 +331,7 @@ def main() -> int:
             detail=(
                 f"market_session={market_session} status={snapshot_status} "
                 f"age_sec={snapshot_age_sec} max_age_sec={snapshot_max_age_sec} "
-                f"freshness_policy={freshness_policy}"
+                f"freshness_policy={freshness_policy} missing_scope_symbols={len(missing_snapshot_symbols)}"
             ),
         )
     )
@@ -503,6 +547,7 @@ def main() -> int:
         final_latest_market_bar = conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1d'"
         ).fetchone()[0]
+        final_missing_daily_symbols = _load_missing_daily_symbols(conn, scoped_symbols, expected_min_market_date)
         final_watermark_intraday_bar, final_watermark_coverage_complete, final_watermark_coverage_count = _load_1m_watermark_coverage(conn, scoped_symbols)
         final_latest_intraday_bar = final_watermark_intraday_bar or conn.execute(
             "SELECT MAX(ts_utc) FROM market_bars WHERE timeframe='1m'"
@@ -510,6 +555,7 @@ def main() -> int:
         final_latest_snapshot = conn.execute(
             "SELECT MAX(as_of_utc) FROM market_snapshots"
         ).fetchone()[0]
+        final_missing_snapshot_symbols = _load_missing_snapshot_symbols(conn, scoped_symbols)
         final_latest_news_pull = conn.execute(
             """
             SELECT MAX(created_at_utc)
@@ -547,13 +593,14 @@ def main() -> int:
         final_lags.append(SourceLag("market_bars_1d", "stale", "no rows"))
     else:
         final_market_date = _market_date_from_db_ts(final_latest_market_bar)
-        final_market_stale = final_market_date < expected_min_market_date
+        final_market_stale = final_market_date < expected_min_market_date or bool(final_missing_daily_symbols)
         final_lags.append(
             SourceLag(
                 source="market_bars_1d",
                 status="stale" if final_market_stale else "fresh",
                 detail=(
-                    f"latest_market_date={final_market_date} expected_min_market_date={expected_min_market_date}"
+                    f"latest_market_date={final_market_date} expected_min_market_date={expected_min_market_date} "
+                    f"missing_scope_symbols={len(final_missing_daily_symbols)}"
                 ),
             )
         )
@@ -590,6 +637,9 @@ def main() -> int:
         freshness_policy=freshness_policy,
         max_age_sec=snapshot_max_age_sec,
     )
+    if final_missing_snapshot_symbols:
+        final_snapshot_status = "missing"
+        final_snapshot_age_sec = None
     final_lags.append(
         SourceLag(
             source="market_snapshots",
@@ -601,7 +651,7 @@ def main() -> int:
             detail=(
                 f"market_session={market_session} status={final_snapshot_status} "
                 f"age_sec={final_snapshot_age_sec} max_age_sec={snapshot_max_age_sec} "
-                f"freshness_policy={freshness_policy}"
+                f"freshness_policy={freshness_policy} missing_scope_symbols={len(final_missing_snapshot_symbols)}"
             ),
         )
     )

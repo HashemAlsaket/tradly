@@ -170,11 +170,13 @@ def _theme_from_symbol_meta(symbol_meta: dict[str, Any], symbol: str) -> str:
 
     if "semis" in roles:
         return "semis_ai_beta"
+    if sector == "Healthcare":
+        return "healthcare"
     if sector == "Financial Services":
         return "financials_rates"
     if sector == "Energy":
         return "energy"
-    if sector in {"Utilities", "Consumer Defensive", "Healthcare"}:
+    if sector in {"Utilities", "Consumer Defensive"}:
         return "defensives"
     if asset_type == "etf" and (
         "index" in industry.lower() or symbol in {"SPY", "QQQ", "IWM", "DIA", "VTI"}
@@ -234,6 +236,7 @@ def _tier_for_symbol(
     *,
     recommendation_row: dict[str, Any],
     review_row: dict[str, Any] | None,
+    event_risk_row: dict[str, Any] | None,
     freshness_snapshot: dict[str, Any],
 ) -> tuple[str, list[str]]:
     action = str(recommendation_row.get("recommended_action", "")).strip()
@@ -242,6 +245,10 @@ def _tier_for_symbol(
     execution_ready = bool(recommendation_row.get("execution_ready", True))
     source_state = str(recommendation_row.get("source_state", "")).strip().lower()
     review_disposition = str((review_row or {}).get("review_disposition", "")).strip().lower()
+    event_active = bool((event_risk_row or {}).get("event_active", False))
+    event_action_bias = str((event_risk_row or {}).get("action_bias", "")).strip().lower()
+    event_reaction_severity = str((event_risk_row or {}).get("reaction_severity", "")).strip().lower()
+    event_hard_cap = bool((event_risk_row or {}).get("hard_cap_buy_to_watch", False))
     reasons: list[str] = []
 
     freshness = freshness_snapshot.get("freshness", {}) if isinstance(freshness_snapshot, dict) else {}
@@ -249,6 +256,9 @@ def _tier_for_symbol(
 
     if action not in LONG_ACTIONS:
         reasons.append("non_long_bucket")
+        return "tier_blocked", reasons
+    if event_active and event_action_bias == "downgrade" and (event_hard_cap or event_reaction_severity == "high"):
+        reasons.append("event_reaction_damage")
         return "tier_blocked", reasons
     if source_state == "blocked" or not execution_ready and freshness_policy in STRICT_POLICIES:
         reasons.append("strict_session_execution_blocker")
@@ -258,6 +268,9 @@ def _tier_for_symbol(
         return "tier_3_probe", reasons
     if confidence <= 55:
         reasons.append("confidence_too_low_for_tier_1")
+        return "tier_2_conditional", reasons
+    if event_active and event_action_bias == "downgrade" and event_reaction_severity == "medium":
+        reasons.append("event_reaction_caution")
         return "tier_2_conditional", reasons
 
     strong_long = recommendation_class in {"aligned_long", "mixed_strong_long"}
@@ -359,6 +372,7 @@ def build_portfolio_policy(
     market_regime_payload: dict[str, Any],
     recommendation_payload: dict[str, Any],
     review_payload: dict[str, Any],
+    event_risk_payload: dict[str, Any],
     freshness_snapshot: dict[str, Any],
     portfolio_snapshot: dict[str, Any],
     universe_registry: dict[str, Any],
@@ -366,12 +380,15 @@ def build_portfolio_policy(
 ) -> dict[str, Any]:
     recommendation_rows = recommendation_payload.get("rows", []) if isinstance(recommendation_payload, dict) else []
     review_rows = review_payload.get("rows", []) if isinstance(review_payload, dict) else []
+    event_risk_rows = event_risk_payload.get("rows", []) if isinstance(event_risk_payload, dict) else []
     market_rows = market_regime_payload.get("rows", []) if isinstance(market_regime_payload, dict) else []
 
     if not isinstance(recommendation_rows, list):
         recommendation_rows = []
     if not isinstance(review_rows, list):
         review_rows = []
+    if not isinstance(event_risk_rows, list):
+        event_risk_rows = []
     if not isinstance(market_rows, list):
         market_rows = []
 
@@ -412,6 +429,11 @@ def build_portfolio_policy(
         str(row.get("scope_id", row.get("symbol", ""))).strip().upper(): row
         for row in recommendation_rows
         if isinstance(row, dict) and str(row.get("scope_id", row.get("symbol", ""))).strip()
+    }
+    event_risk_by_symbol = {
+        str(row.get("scope_id", "")).strip().upper(): row
+        for row in event_risk_rows
+        if isinstance(row, dict) and str(row.get("scope_id", "")).strip()
     }
     position_by_symbol = _position_by_symbol(portfolio_snapshot)
     open_order_summary = _summarize_open_orders(
@@ -458,6 +480,7 @@ def build_portfolio_policy(
         if not symbol:
             continue
         review_row = review_by_symbol.get(symbol)
+        event_risk_row = event_risk_by_symbol.get(symbol)
         meta = symbol_meta_lookup.get(symbol, {})
         theme = _theme_from_symbol_meta(meta, symbol)
         horizon_bucket = HORIZON_MAP.get(str(recommendation_row.get("recommended_horizon", "")).strip(), "unknown")
@@ -467,6 +490,7 @@ def build_portfolio_policy(
         tier, tier_reason_codes = _tier_for_symbol(
             recommendation_row=recommendation_row,
             review_row=review_row,
+            event_risk_row=event_risk_row,
             freshness_snapshot=freshness_snapshot,
         )
         score = _normalize_score(_coerce_float(recommendation_row.get("score_normalized")))
@@ -496,6 +520,7 @@ def build_portfolio_policy(
                 "symbol": symbol,
                 "recommendation_row": recommendation_row,
                 "review_row": review_row or {},
+                "event_risk_row": event_risk_row or {},
                 "current_position": current_position,
                 "current_weight": current_weight,
                 "theme_id": theme,
@@ -573,6 +598,7 @@ def build_portfolio_policy(
 
         recommendation_row = item["recommendation_row"]
         review_row = item["review_row"]
+        event_risk_row = item["event_risk_row"]
         weight_delta = target_weight - current_weight
         current_position = item["current_position"] if isinstance(item["current_position"], dict) else {}
         is_held = current_weight > 0
@@ -585,6 +611,8 @@ def build_portfolio_policy(
             policy_blockers.append("theme_cap_exhausted")
         if item["idea_tier"] == "tier_blocked":
             policy_blockers.append("tier_blocked")
+        if bool(event_risk_row.get("event_active", False)) and str(event_risk_row.get("action_bias", "")).strip().lower() == "downgrade":
+            policy_blockers.append("event_reaction_damage")
         if current_weight <= 0 and item["raw_target_weight"] > 0 and target_weight <= 0:
             policy_blockers.append("max_active_positions_reached")
         if has_active_buy_order and recommendation_action in {"Buy", "Watch Buy"}:
@@ -631,7 +659,8 @@ def build_portfolio_policy(
                 list(item["tier_reason_codes"])
                 + [str(review_row.get("review_reason_code", "")).strip()]
                 + [str(recommendation_row.get("primary_reason_code", "")).strip()]
-            )
+                + [str(event_risk_row.get("reaction_state", "")).strip()]
+                )
             - {""}
         )
         rows.append(
@@ -641,6 +670,9 @@ def build_portfolio_policy(
                 "recommended_horizon": recommendation_row.get("recommended_horizon"),
                 "review_disposition": review_row.get("review_disposition"),
                 "review_bucket": review_row.get("review_bucket"),
+                "event_active": bool(event_risk_row.get("event_active", False)),
+                "event_reaction_state": event_risk_row.get("reaction_state"),
+                "event_reaction_severity": event_risk_row.get("reaction_severity"),
                 "recommendation_class": recommendation_row.get("recommendation_class"),
                 "confidence_score": recommendation_row.get("confidence_score"),
                 "score_normalized": recommendation_row.get("score_normalized"),
@@ -754,6 +786,7 @@ def build_portfolio_policy(
         "input_summary": {
             "recommendation_count": len(recommendation_rows),
             "review_count": len(review_rows),
+            "event_risk_count": len(event_risk_rows),
             "portfolio_snapshot_as_of_utc": portfolio_snapshot.get("as_of_utc"),
             "universe_symbol_count": len(symbol_meta_lookup),
             "managed_universe_count": len(active_universe),

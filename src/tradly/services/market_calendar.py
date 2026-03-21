@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 
 MARKET_TZ = ZoneInfo("America/New_York")
+PREMARKET_OPEN_ET = time(4, 0)
 MARKET_OPEN_ET = time(9, 30)
 MARKET_CLOSE_ET = time(16, 0)
 
@@ -109,6 +110,8 @@ def market_session_state(now_utc: datetime) -> str:
     if day.weekday() >= 5:
         return "weekend"
     current_time = now_et.time()
+    if current_time < PREMARKET_OPEN_ET:
+        return "overnight"
     if current_time < MARKET_OPEN_ET:
         return "pre_market"
     if current_time <= MARKET_CLOSE_ET:

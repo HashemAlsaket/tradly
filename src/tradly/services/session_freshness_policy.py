@@ -2,6 +2,8 @@ from __future__ import annotations
 
 
 def freshness_policy_for_session(market_session: str) -> str:
+    if market_session == "overnight":
+        return "after_hours_relaxed"
     if market_session == "pre_market":
         return "premarket_tradable"
     if market_session == "market_hours":

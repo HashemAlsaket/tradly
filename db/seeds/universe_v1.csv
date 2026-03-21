@@ -15,37 +15,39 @@ ASML,stock,Technology,Context Symbol,review_required,false
 AVGO,stock,Technology,Semiconductors,investable,true
 BAC,stock,Financial Services,Banks - Diversified,probably_not_halal,true
 BLK,stock,Financial Services,Asset Management,review_required,true
-CAT,stock,Industrials,Farm & Heavy Construction Machinery,investable,false
+CAT,stock,Industrials,Farm & Heavy Construction Machinery,investable,true
 CHTR,stock,Communication Services,Telecom Services,investable,false
 CL,stock,Consumer Defensive,Household & Personal Products,investable,false
 COIN,stock,Financial Services,Capital Markets,probably_not_halal,true
 COST,stock,Consumer Defensive,Discount Stores,investable,true
 CRM,stock,Technology,Software - Application,investable,true
 CSCO,stock,Technology,Communication Equipment,investable,true
+CVS,stock,Healthcare,Pharmacy & Drug Stores,investable,false
 CVX,stock,Energy,Oil & Gas Integrated,investable,true
-DE,stock,Industrials,Farm & Heavy Construction Machinery,investable,false
-DHR,stock,Healthcare,Diagnostics & Research,investable,false
+DE,stock,Industrials,Farm & Heavy Construction Machinery,investable,true
+DHR,stock,Healthcare,Diagnostics & Research,investable,true
 DIA,etf,ETF,Large Cap ETF,investable,true
 DIS,stock,Communication Services,Entertainment,investable,true
 DUK,stock,Utilities,Utilities - Regulated Electric,investable,false
-EOG,stock,Energy,Oil & Gas E&P,investable,false
+EOG,stock,Energy,Oil & Gas E&P,investable,true
 EQIX,stock,Real Estate,REIT - Specialty,investable,false
 EWJ,etf,ETF,Context Symbol,review_required,false
 EWT,etf,ETF,Context Symbol,review_required,false
 EXC,stock,Utilities,Utilities - Diversified,investable,false
 FCX,stock,Basic Materials,Copper,investable,false
 FXI,etf,ETF,Context Symbol,review_required,false
-GE,stock,Industrials,Aerospace & Defense,investable,false
+GE,stock,Industrials,Aerospace & Defense,investable,true
+GILD,stock,Healthcare,Drug Manufacturers - General,investable,false
 GLD,etf,ETF,Context Symbol,review_required,false
 GOOGL,stock,Communication Services,Internet Content & Information,investable,true
 GS,stock,Financial Services,Capital Markets,probably_not_halal,true
-HON,stock,Industrials,Specialty Industrial Machinery,investable,false
+HON,stock,Industrials,Specialty Industrial Machinery,investable,true
 I:VIX,index,Macro,Volatility Index,review_required,false
 IEF,etf,Macro,Treasury Bond ETF,review_required,false
 INTC,stock,Technology,Semiconductors,investable,true
-ISRG,stock,Healthcare,Medical Instruments & Supplies,investable,false
+ISRG,stock,Healthcare,Medical Instruments & Supplies,investable,true
 IWM,etf,ETF,Small Cap ETF,investable,true
-JNJ,stock,Healthcare,Drug Manufacturers - General,investable,false
+JNJ,stock,Healthcare,Drug Manufacturers - General,investable,true
 JPM,stock,Financial Services,Banks - Diversified,probably_not_halal,true
 KLAC,stock,Technology,Context Symbol,review_required,false
 KO,stock,Consumer Defensive,Beverages - Non-Alcoholic,investable,true
@@ -53,13 +55,13 @@ KRE,etf,ETF,Regional Banks ETF,probably_not_halal,false
 KWEB,etf,ETF,Context Symbol,review_required,false
 LIN,stock,Basic Materials,Specialty Chemicals,investable,false
 LLY,stock,Healthcare,Drug Manufacturers - General,investable,true
-LMT,stock,Industrials,Aerospace & Defense,investable,false
+LMT,stock,Industrials,Aerospace & Defense,investable,true
 LRCX,stock,Technology,Context Symbol,review_required,false
 MA,stock,Financial Services,Credit Services,review_required,true
 MCD,stock,Consumer Cyclical,Restaurants,investable,true
 MDLZ,stock,Consumer Defensive,Confectioners,investable,false
 META,stock,Communication Services,Internet Content & Information,review_required,true
-MRK,stock,Healthcare,Drug Manufacturers - General,investable,false
+MRK,stock,Healthcare,Drug Manufacturers - General,investable,true
 MS,stock,Financial Services,Capital Markets,probably_not_halal,true
 MSFT,stock,Technology,Software - Infrastructure,investable,true
 MU,stock,Technology,Semiconductors,investable,true
@@ -74,12 +76,12 @@ ORCL,stock,Technology,Software - Infrastructure,investable,true
 OXY,stock,Energy,Oil & Gas E&P,investable,false
 PEP,stock,Consumer Defensive,Beverages - Non-Alcoholic,investable,true
 PFE,stock,Healthcare,Drug Manufacturers - General,investable,true
-PG,stock,Consumer Defensive,Household & Personal Products,investable,false
+PG,stock,Consumer Defensive,Household & Personal Products,investable,true
 PLD,stock,Real Estate,REIT - Industrial,investable,false
 PLTR,stock,Technology,Software - Infrastructure,investable,true
 QQQ,etf,ETF,Large Cap Growth ETF,investable,true
 SHY,etf,Macro,Treasury Bond ETF,review_required,false
-SLB,stock,Energy,Oil & Gas Equipment & Services,investable,false
+SLB,stock,Energy,Oil & Gas Equipment & Services,investable,true
 SMCI,stock,Technology,Computer Hardware,investable,false
 SMH,etf,ETF,Context Symbol,review_required,false
 SNDK,stock,Technology,Semiconductors,investable,true
@@ -89,7 +91,7 @@ SPY,etf,ETF,Broad Market ETF,investable,true
 SRE,stock,Utilities,Utilities - Diversified,investable,false
 SYK,stock,Healthcare,Medical Devices,investable,false
 TLT,etf,Macro,Treasury Bond ETF,review_required,false
-TMO,stock,Healthcare,Diagnostics & Research,investable,false
+TMO,stock,Healthcare,Diagnostics & Research,investable,true
 TMUS,stock,Communication Services,Telecom Services,investable,false
 TSLA,stock,Consumer Cyclical,Auto Manufacturers,review_required,true
 TSM,stock,Technology,Context Symbol,review_required,false

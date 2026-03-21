@@ -18,6 +18,7 @@ class CycleStepOrderTests(unittest.TestCase):
         self.assertIn("run_recommendation_scorecard", step_names)
         self.assertIn("run_recommendation_scorecard_history", step_names)
         self.assertIn("run_recommendation_review", step_names)
+        self.assertIn("run_event_risk", step_names)
         self.assertIn("run_ensemble", step_names)
 
         self.assertLess(
@@ -34,6 +35,10 @@ class CycleStepOrderTests(unittest.TestCase):
         )
         self.assertLess(
             step_names.index("run_recommendation"),
+            step_names.index("run_event_risk"),
+        )
+        self.assertLess(
+            step_names.index("run_event_risk"),
             step_names.index("run_recommendation_scorecard"),
         )
         self.assertLess(
