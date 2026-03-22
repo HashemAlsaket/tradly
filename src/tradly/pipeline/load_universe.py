@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from datetime import datetime, timezone
 
-from tradly.paths import get_repo_root
+from tradly.paths import ensure_path_allowed_for_duckdb_ingest, get_repo_root
 
 
 def main() -> int:
@@ -28,7 +28,8 @@ def main() -> int:
     now = datetime.now(timezone.utc)
 
     rows: list[dict] = []
-    with seed_path.open("r", encoding="utf-8", newline="") as fh:
+    allowed_seed_path = ensure_path_allowed_for_duckdb_ingest(seed_path, repo_root=repo_root)
+    with allowed_seed_path.open("r", encoding="utf-8", newline="") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             rows.append(

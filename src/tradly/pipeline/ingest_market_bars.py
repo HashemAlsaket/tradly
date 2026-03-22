@@ -9,7 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from tradly.paths import get_repo_root
+from tradly.paths import ensure_path_allowed_for_duckdb_ingest, get_repo_root
 from tradly.services.db_time import to_db_utc
 from tradly.services.market_calendar import is_trading_day
 from tradly.services.time_context import get_time_context
@@ -151,7 +151,8 @@ def _load_market_data_symbols(repo_root: Path) -> list[str]:
     manifest_path = repo_root / SCOPE_MANIFEST_PATH
     if not manifest_path.exists():
         raise RuntimeError(f"market_data_scope_manifest_missing:{manifest_path}")
-    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    allowed_manifest_path = ensure_path_allowed_for_duckdb_ingest(manifest_path, repo_root=repo_root)
+    payload = json.loads(allowed_manifest_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise RuntimeError("market_data_scope_manifest_invalid:root_not_object")
     scopes = payload.get("scopes")

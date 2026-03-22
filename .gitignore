@@ -29,6 +29,8 @@ data/clean/
 data/features/
 data/runs/
 data/journal/
+robinhood_data/
+ad_hoc/system_vs_market/
 
 # Coverage
 .coverage

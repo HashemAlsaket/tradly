@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from tradly.paths import get_repo_root
+from tradly.paths import ensure_path_allowed_for_duckdb_ingest, get_repo_root
 from tradly.services.db_time import to_db_utc
 from tradly.services.news_bucket_health import REQUIRED_NEWS_BUCKETS
 from tradly.services.time_context import get_time_context
@@ -159,7 +159,7 @@ def _normalize_published_after(value: str | None) -> str | None:
 
 
 def _load_watchlists(path: Path) -> tuple[int, int, int, dict[str, int], dict[str, list[str]], dict[str, dict[str, int]]]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(ensure_path_allowed_for_duckdb_ingest(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise RuntimeError("watchlist config must be object")
     daily_budget = int(payload.get("daily_request_budget", DEFAULT_DAILY_BUDGET))

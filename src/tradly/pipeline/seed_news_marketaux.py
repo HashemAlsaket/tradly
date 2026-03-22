@@ -7,7 +7,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from tradly.paths import get_repo_root
+from tradly.paths import ensure_path_allowed_for_duckdb_ingest, get_repo_root
 
 
 WATCHLIST_PATH = Path("data/manual/news_seed_watchlists.json")
@@ -93,7 +93,7 @@ def _fetch_page(api_token: str, symbols: list[str], limit: int, page: int) -> di
 
 
 def _load_watchlists(path: Path) -> tuple[int, int, int, dict[str, list[str]]]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(ensure_path_allowed_for_duckdb_ingest(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise RuntimeError("watchlist config must be object")
     lookback_days = int(payload.get("lookback_days", 21))
